@@ -323,18 +323,25 @@ const CATS = [
   {id:"loan",      name:"Loan payment",    color:"#C4614A", group:"debt"},
   {id:"childcare", name:"Childcare / support", color:"#8A6BB0", group:"essential"},
   {id:"medical",   name:"Medical",         color:"#6A5DA6", group:"essential"},
+  {id:"household", name:"Household & supplies", color:"#8A9B5F", group:"lifestyle"},
+  {id:"personal",  name:"Personal & fun",  color:"#A2789B", group:"lifestyle"},
   {id:"subs",      name:"Subscriptions",   color:"#B5820F", group:"lifestyle"},
   {id:"other",     name:"Other",           color:"#748A80", group:"lifestyle"}
 ];
 const catOf = id => CATS.find(c=>c.id===id) || CATS[CATS.length-1];
+// what spending money can be earmarked as: no due dates, just debit-card categories
+const SPEND_CATS = ["groceries","carcost","household","personal","subs","medical","childcare","phone","other"];
 const FREQS = [
-  {id:"monthly", name:"Monthly", perYear:12},
-  {id:"biweekly",name:"Every 2 weeks", perYear:26},
-  {id:"weekly",  name:"Weekly", perYear:52},
-  {id:"quarterly",name:"Every 3 months", perYear:4},
-  {id:"annual",  name:"Yearly", perYear:1},
-  {id:"once",    name:"One time", perYear:0}
+  {id:"monthly",   name:"Monthly",        perYear:12, step:1},
+  {id:"quarterly", name:"Every 3 months", perYear:4,  step:3},
+  {id:"semiannual",name:"Every 6 months", perYear:2,  step:6},
+  {id:"annual",    name:"Yearly",         perYear:1,  step:12},
+  {id:"biweekly",  name:"Every 2 weeks",  perYear:26},
+  {id:"weekly",    name:"Weekly",         perYear:52},
+  {id:"once",      name:"One time",       perYear:0}
 ];
+// frequencies counted in months rather than days; anything here needs a start date
+const MONTHLY_STEP = { quarterly:3, semiannual:6, annual:12 };
 const PAYF = [
   {id:"biweekly",   name:"Every 2 weeks", perYear:26},
   {id:"weekly",     name:"Weekly", perYear:52},
@@ -375,7 +382,7 @@ function save(){
 function newBudget(name){
   return { id:uid(), name:name||"My budget", created:iso(today()),
     pay:{ amount:0, freq:"biweekly", next:iso(addDays(today(),7)) },
-    extras:[], expenses:[], goals:[], allowance:0, horizon:6, startBalance:0,
+    extras:[], expenses:[], goals:[], buckets:[], allowance:0, horizon:6, startBalance:0,
     rollover:true, pins:{}, paid:{}, snaps:{}, log:{} };
 }
 const B = () => store.budgets.find(b=>b.id===store.activeId) || store.budgets[0];
@@ -384,6 +391,10 @@ const B = () => store.budgets.find(b=>b.id===store.activeId) || store.budgets[0]
    Paycheck + bill occurrence generation
    ============================================================ */
 function payPerYear(b){ return (PAYF.find(f=>f.id===b.pay.freq)||PAYF[0]).perYear; }
+/* Spending money is the earmarked buckets plus whatever's left loose. Both are
+   reserved from every check before the plan places a single bill. */
+const bucketTotal = b => (b.buckets||[]).reduce((s,x)=>s+(+x.amount||0),0);
+const allowanceTotal = b => (+b.allowance||0) + bucketTotal(b);
 function monthlyIncome(b){
   const base = (b.pay.amount||0) * payPerYear(b) / 12;
   return base;
@@ -424,6 +435,28 @@ function nextPay(d, freq, b){
   return addMonths(new Date(d.getFullYear(), d.getMonth(), anchor), 1);
 }
 function occKey(e, dueIso){ return e.id + "@" + dueIso; }
+
+/* Any recurring bill worth more than a fifth of a paycheck gets set aside a piece
+   at a time. Tested against an exhaustive search: this lands within a few dollars
+   of the best possible arrangement, and it's instant. */
+const SPLIT_AT = 0.20;
+function shouldSplit(b, e){
+  const f = e.freq || "monthly";
+  if(f === "once") return false;
+  if(MONTHLY_STEP[f]) return true;   // a bill that lands twice a year is the whole reason
+  const pay = +b.pay.amount || 0;    // sinking funds exist — always save toward it
+  if(pay <= 0) return false;
+  return (+e.amount||0) > pay * SPLIT_AT;
+}
+function autoSplit(b){
+  let changed = false;
+  (b.expenses||[]).forEach(e=>{
+    if(e.splitManual) return;              // the user overrode this one; leave it alone
+    const want = shouldSplit(b, e);
+    if(!!e.sinking !== want){ e.sinking = want; changed = true; }
+  });
+  return changed;
+}
 function genOccurrences(b, endDate){
   const out=[]; const start = today();
   (b.expenses||[]).forEach(e=>{
@@ -442,8 +475,8 @@ function genOccurrences(b, endDate){
       const step = f==="weekly"?7:14; let d = D(e.dueDate||iso(today()));
       let g=0; while(d<start && g++<500) d = addDays(d, step);
       g=0; while(d<=endDate && g++<500){ out.push(mk(e, d, amt)); d = addDays(d, step); }
-    } else if(f==="quarterly" || f==="annual"){
-      const step = f==="quarterly"?3:12; let d = D(e.dueDate||iso(today()));
+    } else if(MONTHLY_STEP[f]){
+      const step = MONTHLY_STEP[f]; let d = D(e.dueDate||iso(today()));
       let g=0; while(d<start && g++<60) d = addMonths(d, step);
       g=0; while(d<=endDate && g++<60){ out.push(mk(e, d, amt)); d = addMonths(d, step); }
       // also look one period back so a "set aside gradually" bill can start saving early
@@ -464,8 +497,7 @@ function cycleStart(o){
   const d = o.due;
   if(o.freq==="weekly")    return addDays(d,-7);
   if(o.freq==="biweekly")  return addDays(d,-14);
-  if(o.freq==="quarterly") return addMonths(d,-3);
-  if(o.freq==="annual")    return addMonths(d,-12);
+  if(MONTHLY_STEP[o.freq]) return addMonths(d, -MONTHLY_STEP[o.freq]);
   if(o.freq==="once")      return addDays(today(),-1);
   return addMonths(d,-1);
 }
@@ -507,7 +539,7 @@ function buildPlan(b){
   const per = payPerYear(b);
   const goals = (b.goals||[]).map(g=>({ ...g, per:goalPerCheck(b,g) }));
   const goalTotal = goals.reduce((s,g)=>s+g.per,0);
-  const allowance = +b.allowance||0;
+  const allowance = allowanceTotal(b);
 
   if(!checks.length) return { checks:[], occs:[], goals, goalTotal, allowance, unfunded:[], per };
 
@@ -580,7 +612,8 @@ function buildPlan(b){
   // pack results onto each check
   checks.forEach((c,i)=>{
     c.bills=0; c.debtBills=0; c.items=[];
-    c.allowance = allowance; c.goalTotal = goalTotal; c.goals = goals;
+    c.allowance = allowance; c.free = +b.allowance||0; c.buckets = b.buckets||[];
+    c.goalTotal = goalTotal; c.goals = goals;
     c.sinking = [];
     sinkingRes.forEach(o=>{ if(o.spanIds[c.id]){ c.sinking.push({name:o.name, amount:o.spread, due:o.due, key:o.key}); } });
     c.sinkTotal = c.sinking.reduce((s,x)=>s+x.amount,0);
@@ -670,7 +703,7 @@ function debtSummary(b, plan){
   const totalMin = debts.reduce((s,d)=>s+d.min,0);
   const wApr = totalBal>0 ? debts.reduce((s,d)=>s+d.apr*d.balance,0)/totalBal : 0;
   const billsM = (b.expenses||[]).reduce((s,e)=>s+monthlyCost(e),0);
-  const allowM = (+b.allowance||0)*plan.per/12;
+  const allowM = allowanceTotal(b)*plan.per/12;
   const savM = (b.goals||[]).filter(g=>g.type==="savings").reduce((s,g)=>s+goalPerCheck(b,g)*plan.per/12,0);
   const avgLeft = monthlyIncome(b) - billsM - allowM - savM;
   const goalExtra = (b.goals||[]).filter(g=>g.type==="debt")
@@ -723,7 +756,7 @@ function analyze(b, plan){
   const exp = (b.expenses||[]);
   const sumCat = ids => exp.filter(e=>ids.includes(e.cat)).reduce((s,e)=>s+monthlyCost(e),0);
   const billsM = exp.reduce((s,e)=>s+monthlyCost(e),0);
-  const allowM = (+b.allowance||0)*per/12;
+  const allowM = allowanceTotal(b)*per/12;
   const savingsM = (b.goals||[]).filter(g=>g.type==="savings").reduce((s,g)=>s+goalPerCheck(b,g)*per/12,0);
   const debtGoalM = (b.goals||[]).filter(g=>g.type==="debt").reduce((s,g)=>s+goalPerCheck(b,g)*per/12,0);
   const leftM = inc - billsM - allowM - savingsM - debtGoalM;
@@ -735,9 +768,31 @@ function analyze(b, plan){
     "Add your net paycheck under Money."); return {flags, score:0, inc, billsM, allowM, savingsM, leftM}; }
 
   // 1. does it even balance
-  if(leftM < -1) add("crit","You're spending more than you earn", money(leftM)+"/mo",
-    "Bills, allowance and goal contributions add up to "+money(billsM+allowM+savingsM+debtGoalM)+" a month against "+money(inc)+" coming in. This gap gets covered by credit cards or overdrafts.",
-    "Cut "+money(-leftM)+" a month, or stretch a goal timeline to lower the required contribution.");
+  let stretchedGoal = null;
+  if(leftM < -1){
+    const gap = -leftM;
+    let act = null;
+    const gs = (b.goals||[]).slice().sort((x,y)=>goalPerCheck(b,y)-goalPerCheck(b,x));
+    if(gs.length){
+      const g = gs[0], curM = goalPerCheck(b,g)*per/12, targetM = curM - gap;
+      if(targetM > 0){
+        for(let m=(+g.months||12)+1; m<=180; m++){
+          if(goalPerCheck(b, Object.assign({}, g, {months:m}))*per/12 <= targetM + 0.5){
+            act = { label:'Stretch "'+g.name+'" to '+m+" months", act:"stretchGoal", id:g.id, months:m };
+            stretchedGoal = g.id;
+            break;
+          }
+        }
+      }
+    }
+    if(!act && (+b.allowance||0) > 0){
+      const cut = Math.max(0, Math.floor(((+b.allowance||0) - gap*12/per)/5)*5);
+      act = { label:"Cut loose spending to "+money(cut)+" a check", act:"trimAllowance", to:cut };
+    }
+    add("crit","You're spending more than you earn", money(leftM)+"/mo",
+      "Bills, spending money and goal contributions add up to "+money(billsM+allowM+savingsM+debtGoalM)+" a month against "+money(inc)+" coming in. This gap gets covered by credit cards or overdrafts.",
+      "Cut "+money(gap)+" a month, or stretch a goal timeline so it asks for less.", act);
+  }
   else if(leftM < inc*0.02) add("watch","Almost nothing left after the plan", money(leftM)+"/mo",
     "You're running at the edge. One unexpected car repair or medical copay puts you into a card.",
     "Aim to leave at least "+money(inc*0.05)+" a month unassigned as breathing room.");
@@ -787,16 +842,21 @@ function analyze(b, plan){
   const monthlyNeed = billsM + allowM;
   if(!hasEF) add("watch","No emergency fund goal","3 months = "+money(monthlyNeed*3),
     "Before any other savings goal, most guidance says to bank three months of essential spending. Yours would be about "+money(monthlyNeed*3)+".",
-    "Add a savings goal named Emergency fund in the Goals tab.");
+    "Starting one is worth more than the amount you start with.",
+    { label:"Start an emergency fund goal", act:"addEF", amount:Math.round(monthlyNeed*3), months:24 });
 
   // 6. spending allowance
   const aPct = pct(allowM);
-  if(allowM<=0) add("watch","No spending allowance set","",
-    "A budget with zero personal spending built in is the kind people abandon in week three. Groceries out, coffee, a haircut all have to come from somewhere.",
-    "Set an allowance per check under Money, even a small one.");
-  else if(aPct>30) add("watch","Allowance is a big slice", Math.round(aPct)+"% of take-home",
-    "Nearly a third of your pay is unassigned spending money. That's fine if it's deliberate, but it's usually where the missing savings went.",
-    "Trimming it by a quarter would free "+money(allowM*0.25)+" a month for goals.");
+  if(allowM<=0) add("watch","No spending money set aside","",
+    "A budget with zero personal spending built in is the kind people abandon in week three. Groceries, gas, a haircut all have to come from somewhere.",
+    "Even a small amount held back from each check makes the plan survivable.",
+    { label:"Set aside "+money(inc*0.08*12/per)+" a check", act:"setAllowance",
+      to: Math.round(inc*0.08*12/per/5)*5 });
+  else if(aPct>30) add("watch","Spending money is a big slice", Math.round(aPct)+"% of take-home",
+    "Nearly a third of your pay is spending money. That's fine if it's deliberate, but it's usually where the missing savings went.",
+    "Trimming it by a quarter would free "+money(allowM*0.25)+" a month for goals.",
+    (+b.allowance||0) > 0 ? { label:"Trim loose spending by a quarter", act:"trimAllowance",
+      to: Math.round((+b.allowance||0)*0.75/5)*5 } : null);
 
   // 7. transport
   const tPct = pct(carM + sumCat(["carcost"]));
@@ -841,7 +901,7 @@ function analyze(b, plan){
   // 9b. one bill hogging a whole check
   const perCheck = +b.pay.amount || 0;
   const chunky = exp.filter(e => !e.sinking && (+e.amount||0) > perCheck*0.45
-                   && ["monthly","quarterly","annual","once"].includes(e.freq||"monthly"))
+                   && (e.freq||"monthly") !== "once")
                    .sort((x,y)=>(+y.amount)-(+x.amount));
   if(perCheck>0 && chunky.length){
     const e = chunky[0];
@@ -859,7 +919,8 @@ function analyze(b, plan){
   if(cleared.length) add("good", cleared.length>1 ? "Cleared debts still on the plan" : "\""+cleared[0].name+"\" is paid off",
     money(cleared.reduce((s2,e)=>s2+monthlyCost(e),0))+"/mo freed",
     (cleared.length>1 ? cleared.map(e=>e.name).join(" and ")+" have" : "It has")+" a zero balance but the payment is still in your bills, so the plan is holding money back for it.",
-    "Delete the bill under Money, or roll that amount into your next debt or savings goal.");
+    "Removing it hands that money back to every paycheck.",
+    cleared.length===1 ? { label:"Remove the "+cleared[0].name+" payment", act:"removeBill", id:cleared[0].id } : null);
 
   // 10. high APR
   const highApr = debtList(b).filter(d=>d.apr>=22);
@@ -873,7 +934,10 @@ function analyze(b, plan){
     if(p > 0 && leftM < 0)
       add("watch","\""+g.name+"\" may be too aggressive", money(p)+"/check",
         "Hitting "+money(g.target)+" in "+g.months+" months needs "+money(p)+" from every check, and the budget doesn't have room for it.",
-        "Stretching it to "+Math.ceil(g.months*1.5)+" months drops the ask to about "+money(p*g.months/(g.months*1.5))+" a check.");
+        "Stretching the deadline is the least painful lever you have.",
+        stretchedGoal === g.id ? null
+          : { label:"Stretch it to "+Math.ceil(g.months*1.5)+" months", act:"stretchGoal",
+              id:g.id, months:Math.ceil(g.months*1.5) });
   });
 
   // score
@@ -904,8 +968,10 @@ function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("on"
 function render(){
   const b = B();
   if(!b) return;
+  let dirty = autoSplit(b);
   PLAN = buildPlan(b);
-  if(snapshot(b, PLAN)) save();
+  if(snapshot(b, PLAN)) dirty = true;
+  if(dirty) save();
   const a = analyze(b, PLAN);
   $("budgetName").textContent = b.name;
   const next = PLAN.checks[0];
@@ -973,7 +1039,7 @@ function renderPlan(b){
         const last = b.log[ks.sort((x,y)=> (b.log[x].at<b.log[y].at?-1:1))[ks.length-1]];
         if(last.drift == null || Math.abs(last.drift) < 20) return "";
         return `<p class="sec-note" style="margin:10px 2px 0">Last check-in: ${money(Math.abs(last.drift))} ${last.drift<0?"behind":"ahead of"} plan. The plan now starts from your real balance.</p>`; })()}
-    ${cs.length>2 && b.expenses.length>1 ? `<button class="add" data-act="evenOut">Even out what's left each check</button>` : ""}
+    ${cs.length>2 && b.expenses.length>1 ? `<button class="add" data-act="evenOut">Even these out further</button>` : ""}
     ${PLAN.buffer>1?`<div class="flag watch" style="margin-top:12px"><h4><span>Keep a cushion in checking</span><em>${money(PLAN.buffer)}</em></h4>
       <p>Bills fall monthly, your pay doesn't, so some checks carry more than they earn${dry?" ("+dry+" of them above)":""}. Over the next three months the balance bottoms out ${money(PLAN.buffer)} below zero. Keeping that much parked in checking is what makes the plan work.</p></div>`:""}
     ${PLAN.unfunded.length ? `<div class="flag crit" style="margin-top:12px"><h4>Due before your next paycheck</h4>
@@ -1020,10 +1086,17 @@ function checkCard(b,c){
       <span class="item-main"><span class="item-name">${esc(g.name)}</span><span class="item-sub">${g.type==="debt"?"extra toward debt":"into savings"}${gdone?" · added":""}</span></span>
       <span class="item-amt">${money(g.per)}</span></button>`);
   });
-  if(c.allowance>0) rows.push(`<div class="item"><span class="tick" style="border-color:var(--steel);background:var(--steel);color:#fff">
+  (c.buckets||[]).forEach(x=>{ if(!(+x.amount>0)) return;
+    rows.push(`<button class="item" data-act="editBucket" data-id="${x.id}">
+      <span class="tick" style="border-color:${catOf(x.cat).color};background:${catOf(x.cat).color};color:#fff">
+        <svg width="11" height="9" viewBox="0 0 11 9"><circle cx="5.5" cy="4.5" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span>
+      <span class="item-main"><span class="item-name">${esc(x.name)}</span><span class="item-sub">spending money, no due date</span></span>
+      <span class="item-amt">${money(x.amount)}</span></button>`);
+  });
+  if(c.free>0) rows.push(`<div class="item"><span class="tick" style="border-color:var(--steel);background:var(--steel);color:#fff">
     <svg width="11" height="9" viewBox="0 0 11 9"><circle cx="5.5" cy="4.5" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span>
-    <span class="item-main"><span class="item-name">Spending allowance</span><span class="item-sub">yours to use however you want</span></span>
-    <span class="item-amt">${money(c.allowance)}</span></div>`);
+    <span class="item-main"><span class="item-name">Anything else</span><span class="item-sub">yours to use however you want</span></span>
+    <span class="item-amt">${money(c.free)}</span></div>`);
   return `<article class="check ${open?'open':''} ${c.date<today()?'past':''}" id="chk-${c.id}">
     <button class="check-head" data-check-toggle="${c.id}">
       <span><span class="check-when">${when}</span><span class="check-date">${fmtLong(c.date)}</span></span>
@@ -1038,7 +1111,7 @@ function checkCard(b,c){
       <span>Bills <b>${money(c.bills)}</b></span>
       ${c.sinkTotal>0?`<span>Set aside <b>${money(c.sinkTotal)}</b></span>`:""}
       ${c.goalTotal>0?`<span>Goals <b>${money(c.goalTotal)}</b></span>`:""}
-      ${c.allowance>0?`<span>Allowance <b>${money(c.allowance)}</b></span>`:""}
+      ${c.allowance>0?`<span>Spending <b>${money(c.allowance)}</b></span>`:""}
       <span>${Math.round(c.load*100)}% of this check</span>
     </div>
     <div class="check-body">${rows.length?rows.join(""):'<div class="empty-check">Nothing due from this check.</div>'}</div>
@@ -1079,14 +1152,27 @@ function renderMoney(b){
     </div>
     <button class="add" data-act="addExtra">+ Add extra income</button>
 
-    <h2 class="sec">Spending allowance</h2>
-    <p class="sec-note">Money you keep back from every check for groceries out, gas, whatever comes up. It's reserved before the plan decides anything else.</p>
-    <div class="card"><div class="row" style="display:block">
+    <h2 class="sec">Spending money</h2>
+    <p class="sec-note">Money you spend straight off your card — no due dates. It's reserved from every check before the plan places a single bill.</p>
+    <div class="card" style="padding:15px 16px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span class="row-title">Per paycheck</span>
+        <span class="row-title">Every paycheck</span>
+        <span class="num" style="font-size:24px">${money(allowanceTotal(b))}</span></div>
+      <div class="row-sub" style="margin-top:2px">${money(allowanceTotal(b)*per/12)} a month${bucketTotal(b)>0?` · ${money(bucketTotal(b))} earmarked, ${money(b.allowance||0)} loose`:""}</div>
+    </div>
+    ${(b.buckets||[]).length?`<div class="card" style="margin-top:12px">${(b.buckets||[]).map(x=>`
+      <button class="row" data-act="editBucket" data-id="${x.id}">
+        <span class="swatch" style="background:${catOf(x.cat).color}"></span>
+        <span class="row-main"><span class="row-title">${esc(x.name)}</span>
+          <span class="row-sub">${catOf(x.cat).name} · ${money((+x.amount||0)*per/12)}/mo</span></span>
+        <span class="row-amt">${money2(x.amount)}<small>per check</small></span></button>`).join("")}</div>`:""}
+    <button class="add" data-act="addBucket">+ Earmark groceries, gas, anything</button>
+    <div class="card" style="margin-top:12px"><div class="row" style="display:block">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="row-title">Anything else</span>
         <span class="num" style="font-size:22px" id="allowVal">${money(b.allowance||0)}</span></div>
+      <div class="row-sub" style="margin-top:2px">Loose spending money on top of what you've earmarked.</div>
       <input type="range" id="allowRange" min="0" max="${Math.max(200, Math.round((b.pay.amount||400)*0.6/10)*10)}" step="10" value="${b.allowance||0}">
-      <div class="row-sub" style="display:flex;justify-content:space-between"><span>$0</span><span>${money(monthlyIncome(b)? (b.allowance||0)*per/12 : 0)} a month</span></div>
     </div></div>
 
     <h2 class="sec">Bills and expenses</h2>
@@ -1224,9 +1310,11 @@ function renderDebt(b){
 }
 
 /* ---------- Health ---------- */
+let FIXES = [];
 function renderHealth(b, a){
   const order = {crit:0, watch:1, good:2};
   const flags = a.flags.slice().sort((x,y)=>order[x.sev]-order[y.sev]);
+  FIXES = flags.map(f=>f.action||null);
   const crit = flags.filter(f=>f.sev==="crit").length;
   const C = 2*Math.PI*32;
   const verdict = a.score>=80 ? "This budget holds up well." : a.score>=60 ? "Workable, with a few things to tighten." : a.score>=40 ? "Some real strain in here." : "This plan needs structural changes, not discipline.";
@@ -1242,10 +1330,10 @@ function renderHealth(b, a){
     </div>
     <h2 class="sec">What stands out</h2>
     <p class="sec-note">Measured against the rules of thumb planners use. They're guidelines, not verdicts on your life.</p>
-    ${flags.map(f=>`<div class="flag ${f.sev}">
+    ${flags.map((f,i)=>`<div class="flag ${f.sev}">
       <h4><span>${f.title}</span>${f.val?`<em>${f.val}</em>`:""}</h4>
       <p>${f.why}</p>${f.fix?`<p class="fix">${f.fix}</p>`:""}
-      ${f.action?`<button class="btn ghost" style="margin-top:11px" data-act="${f.action.act}" data-id="${f.action.id}">${esc(f.action.label)}</button>`:""}</div>`).join("")}
+      ${f.action?`<button class="btn ghost" style="margin-top:11px" data-fix="${i}">${esc(f.action.label)}</button>`:""}</div>`).join("")}
     <h2 class="sec">Where the money goes</h2>
     <div class="card" style="padding:16px">${spendBars(b, a)}</div>
     ${others.length?`<h2 class="sec">Compare budgets</h2>
@@ -1491,6 +1579,152 @@ function confirmCheckin(){
 }
 
 /* ============================================================
+   Sharing a budget
+   Nothing is stored on a server, so a shared budget travels inside the link
+   itself. That means the plain app URL carries no data at all: anyone you send
+   it to gets an empty app.
+   ============================================================ */
+const B64 = {
+  enc(bytes){ let s = ""; for(let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); },
+  dec(str){ const s = atob(str.replace(/-/g,"+").replace(/_/g,"/"));
+    const out = new Uint8Array(s.length);
+    for(let i=0;i<s.length;i++) out[i] = s.charCodeAt(i);
+    return out; }
+};
+async function gzipStr(str){
+  if(typeof CompressionStream === "undefined") return null;
+  try{
+    const cs = new CompressionStream("gzip");
+    const w = cs.writable.getWriter();
+    w.write(new TextEncoder().encode(str)).catch(()=>{});
+    w.close().catch(()=>{});
+    return new Uint8Array(await new Response(cs.readable).arrayBuffer());
+  }catch(e){ return null; }
+}
+async function gunzipBytes(bytes){
+  const ds = new DecompressionStream("gzip");
+  const w = ds.writable.getWriter();
+  // a corrupt link makes these reject on their own; swallow so it surfaces once, below
+  w.write(bytes).catch(()=>{});
+  w.close().catch(()=>{});
+  return new TextDecoder().decode(await new Response(ds.readable).arrayBuffer());
+}
+function shareableCopy(b){
+  const c = JSON.parse(JSON.stringify(b));
+  delete c.snaps; delete c.log;          // your check-in history stays yours
+  c.sharedAt = iso(today());
+  c.sharedName = b.name;
+  return c;
+}
+async function buildShareLink(b){
+  if(!b.shareId){ b.shareId = uid() + uid(); save(); }
+  const json = JSON.stringify(shareableCopy(b));
+  const gz = await gzipStr(json);
+  const payload = gz ? "1" + B64.enc(gz)
+                     : "0" + B64.enc(new TextEncoder().encode(json));
+  const base = (typeof location !== "undefined" ? location.href.split("#")[0] : "");
+  return base + "#b=" + payload;
+}
+async function readShareLink(hash){
+  const raw = String(hash||"").replace(/^#b=/, "");
+  if(!raw) return null;
+  try{
+    const mode = raw[0], data = B64.dec(raw.slice(1));
+    const json = mode === "1" ? await gunzipBytes(data) : new TextDecoder().decode(data);
+    const inc = JSON.parse(json);
+    if(!inc || !inc.pay || !Array.isArray(inc.expenses)) return null;
+    return inc;
+  }catch(e){ return null; }
+}
+
+/* ---------- sending ---------- */
+async function shareSheet(){
+  const b = B();
+  let url;
+  try{ url = await buildShareLink(b); }
+  catch(e){ toast("Couldn't build the link"); return; }
+  const big = url.length > 12000;
+  openSheet("Share this budget", `
+    <p class="sec-note" style="margin-top:14px">The whole budget is packed into this one link. Send it to someone and the app will offer to load it on their phone. Send it again after you change something and it updates their copy in place rather than piling up duplicates.</p>
+    <label class="f"><span>Link</span>
+      <textarea id="shareUrl" rows="4" readonly style="font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all">${esc(url)}</textarea></label>
+    <button class="btn" style="margin-top:14px" id="shareGo">Send it</button>
+    <button class="btn ghost" id="shareCopy">Copy the link</button>
+    ${big?`<p class="hint" style="color:var(--clay)">This link is unusually long and some apps may cut it off. If it doesn't work, use Export a backup file instead and send that.</p>`:""}
+    <div class="hr"></div>
+    <p class="sec-note">Anyone holding this link can see this budget, so send it directly to the person you mean. It carries your income, bills, goals and balances — but not your check-in history.</p>
+    <p class="sec-note">The plain app address, with nothing after the <b>#</b>, contains none of your data. That's the one to share with anyone who just wants the app.</p>`, null);
+  $("shareGo").addEventListener("click", ()=>{
+    if(navigator.share){
+      navigator.share({ title:"Our budget", text:"Here's our paycheck plan", url }).catch(()=>{});
+    } else { copyShare(url); }
+  });
+  $("shareCopy").addEventListener("click", ()=> copyShare(url));
+}
+function copyShare(url){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(()=>toast("Link copied")).catch(()=>selectShare());
+  } else selectShare();
+}
+function selectShare(){
+  const el = $("shareUrl");
+  if(el && el.select){ el.select(); toast("Press and hold to copy"); }
+}
+
+/* ---------- receiving ---------- */
+async function takeIncomingShare(){
+  if(typeof location === "undefined" || !location.hash || location.hash.indexOf("#b=") !== 0) return null;
+  const inc = await readShareLink(location.hash);
+  try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+  return inc;
+}
+function showImportSheet(inc, onDone){
+  const per = (PAYF.find(f=>f.id===inc.pay.freq)||PAYF[0]).name.toLowerCase();
+  const mine = store.budgets.find(x=>x.shareId && x.shareId === inc.shareId);
+  const goals = (inc.goals||[]).length, bills = (inc.expenses||[]).length;
+  const spend = (+inc.allowance||0) + (inc.buckets||[]).reduce((s,x)=>s+(+x.amount||0),0);
+  openSheet(mine ? "Updated budget received" : "A budget was shared with you", `
+    <div class="card" style="margin-top:14px;padding:15px 16px">
+      <div class="row-title">${esc(inc.sharedName || inc.name || "Shared budget")}</div>
+      <div class="row-sub" style="margin-top:5px">${money(inc.pay.amount||0)} ${per}
+        · ${bills} bill${bills===1?"":"s"} · ${goals} goal${goals===1?"":"s"}
+        · ${money(spend)} spending money a check</div>
+    </div>
+    ${mine ? `<p class="sec-note" style="margin-top:16px">You already have this budget as <b>${esc(mine.name)}</b>. Updating replaces it with this newer version, including anything you changed on your own copy.</p>
+      <button class="btn" style="margin-top:8px" data-act="shareUpdate">Update ${esc(mine.name)}</button>
+      <button class="btn ghost" data-act="shareAdd">Keep both, add as a copy</button>`
+    : `<p class="sec-note" style="margin-top:16px">This adds it to your app as its own budget. Editing it afterwards only changes your copy — it doesn't send anything back.</p>
+      <button class="btn" style="margin-top:8px" data-act="shareAdd">Add this budget</button>`}
+    <button class="btn ghost" data-act="shareSkip">No thanks</button>`, null);
+  PENDING_SHARE = { inc, mine, onDone };
+}
+let PENDING_SHARE = null;
+function applyShare(mode){
+  const ps = PENDING_SHARE; if(!ps) return;
+  const { inc, mine, onDone } = ps;
+  PENDING_SHARE = null;
+  if(mode !== "skip"){
+    const copy = JSON.parse(JSON.stringify(inc));
+    copy.snaps = {}; copy.log = {};
+    if(mode === "update" && mine){
+      copy.id = mine.id; copy.name = mine.name;
+      copy.snaps = mine.snaps || {}; copy.log = mine.log || {};
+      store.budgets = store.budgets.map(x => x.id === mine.id ? copy : x);
+    } else {
+      copy.id = uid();
+      if(mine) copy.name = (inc.sharedName || inc.name || "Shared") + " copy";
+      store.budgets.push(copy);
+    }
+    store.activeId = copy.id;
+    save();
+  }
+  closeSheet();
+  if(onDone) onDone();
+  if(mode !== "skip") toast(mode === "update" ? "Budget updated" : "Budget added");
+}
+
+/* ============================================================
    Sheets
    ============================================================ */
 let sheetSave = null;
@@ -1567,7 +1801,7 @@ function expenseForm(id, presetCat){
     <div id="dueDated" style="display:${(e.freq||"monthly")==="monthly"?"none":"block"}">
       <label class="f"><span>Next due date</span><input type="date" id="exDueDate" value="${e.dueDate||iso(addDays(today(),14))}"></label>
     </div>
-    <div class="toggle"><span class="toggle-txt">Split across paychecks<small>Save part of it from every check in between instead of taking the whole thing from one. Good for rent, and for yearly bills like insurance</small></span>
+    <div class="toggle"><span class="toggle-txt">Split across paychecks<small>Set aside part of it from each check instead of taking the whole thing from one. Handled automatically for anything over a fifth of your pay</small></span>
       <button type="button" class="sw ${e.sinking?"on":""}" id="swSink" aria-pressed="${!!e.sinking}"></button></div>
     <div class="hint" id="sinkHint" style="color:var(--pine)"></div>
     <div class="toggle"><span class="toggle-txt">Autopay on the due date<small>Locks it to the last check before the date so the plan won't move it</small></span>
@@ -1580,6 +1814,7 @@ function expenseForm(id, presetCat){
       const o = { id:id||uid(), name:val("exName")||"Untitled bill", amount:numv("exAmount"), cat,
         freq:val("exFreq"), dueDay:+val("exDueDay")||1, dueDate:val("exDueDate")||iso(addDays(today(),14)),
         sinking:$("swSink").classList.contains("on"), autopay:$("swAuto").classList.contains("on"),
+        splitManual: sinkTouched ? true : (e.splitManual || false),
         balance:numv("exBal"), apr:numv("exApr") };
       const i = b2.expenses.findIndex(x=>x.id===id);
       if(i>=0) b2.expenses[i]=o; else b2.expenses.push(o);
@@ -1591,25 +1826,68 @@ function expenseForm(id, presetCat){
     $("catChips").querySelectorAll(".chip").forEach(x=>x.classList.remove("on"));
     c.classList.add("on");
     $("debtFields").style.display = isDebt(c.dataset.cat) ? "block":"none";
+    const nm = $("exName"), cur = nm.value.trim();
+    if(cur === "" || CATS.some(x=>x.name === cur)) nm.value = catOf(c.dataset.cat).name;
   });
   // a bill too big to sit on one check should offer to split before you save it
-  let sinkTouched = !!id;
-  $("swSink").addEventListener("click", ()=>{ sinkTouched = true; });
-  $("exAmount").addEventListener("input", ()=>{
-    if(sinkTouched) return;
+  let sinkTouched = false;
+  $("swSink").addEventListener("click", ()=>{ sinkTouched = true; $("sinkHint").textContent = ""; });
+  const reflectAuto = ()=>{
+    if(sinkTouched || (e.splitManual && id)) return;
     const pay = +B().pay.amount || 0;
-    const big = pay>0 && numv("exAmount") > pay*0.4;
+    const big = pay>0 && numv("exAmount") > pay*SPLIT_AT && val("exFreq") !== "once";
     $("swSink").classList.toggle("on", big);
     $("sinkHint").textContent = big
-      ? "This one's bigger than 40% of a paycheck, so it's set to split. Turn it off if you'd rather pay it all at once."
+      ? "Over a fifth of a paycheck, so it's set to split automatically. Turn it off to pay it all from one check."
       : "";
-  });
+  };
+  $("exAmount").addEventListener("input", reflectAuto);
+  reflectAuto();
   $("exFreq").addEventListener("change", ()=>{
     const m = val("exFreq")==="monthly";
     $("dueMonthly").style.display = m?"block":"none";
     $("dueDated").style.display = m?"none":"block";
   });
 }
+function bucketForm(id){
+  const b = B();
+  const x = (b.buckets||[]).find(v=>v.id===id) || { name:"", amount:"", cat:"groceries" };
+  const per = payPerYear(b);
+  openSheet(id?"Edit spending category":"Earmark spending money", `
+    <label class="f"><span>What is it</span>
+      <input type="text" id="bkName" value="${esc(x.name)}" placeholder="Groceries, gas, household"></label>
+    <label class="f"><span>Amount per paycheck</span>
+      <div class="money-in"><input type="number" inputmode="decimal" id="bkAmt" value="${x.amount||""}" step="0.01" placeholder="0.00"></div>
+      <div class="hint" id="bkHint"></div></label>
+    <label class="f"><span>Kind</span>
+      <div class="chips" id="bkChips">${SPEND_CATS.map(cid=>{ const c=catOf(cid);
+        return `<button type="button" class="chip ${x.cat===cid?"on":""}" data-cat="${cid}"><i style="background:${c.color}"></i>${c.name}</button>`;
+      }).join("")}</div></label>
+    <p class="sec-note" style="margin-top:18px">This isn't a bill, so it never gets a due date or gets moved between checks. It's simply held back from every paycheck.</p>
+    ${id?`<button class="btn danger" style="margin-top:6px" data-act="delBucket" data-id="${id}">Delete</button>`:""}`,
+    "Save", ()=>{
+      const b2 = B();
+      const sel = $("bkChips").querySelector(".chip.on");
+      const o = { id:id||uid(), name:val("bkName")||catOf(sel?sel.dataset.cat:"other").name,
+                  amount:numv("bkAmt"), cat: sel?sel.dataset.cat:"other" };
+      b2.buckets = b2.buckets||[];
+      const i = b2.buckets.findIndex(v=>v.id===id);
+      if(i>=0) b2.buckets[i]=o; else b2.buckets.push(o);
+      save(); closeSheet(); render();
+      toast("Spending money now " + money(allowanceTotal(b2)) + " a check");
+    });
+  $("bkChips").addEventListener("click", ev=>{
+    const c = ev.target.closest(".chip"); if(!c) return;
+    $("bkChips").querySelectorAll(".chip").forEach(v=>v.classList.remove("on"));
+    c.classList.add("on");
+    const nm = $("bkName"), cur = nm.value.trim();
+    if(cur === "" || CATS.some(v=>v.name === cur)) nm.value = catOf(c.dataset.cat).name;
+  });
+  const upd = ()=>{ const v = numv("bkAmt");
+    $("bkHint").textContent = v>0 ? money(v*per/12) + " a month" : ""; };
+  $("bkAmt").addEventListener("input", upd); upd();
+}
+
 function goalForm(id, type){
   const b = B();
   const g = (b.goals||[]).find(x=>x.id===id) || { name:"", target:"", months:12, saved:0, type:type||"savings", apr:"" };
@@ -1675,6 +1953,66 @@ function itemSheet(key, checkId){
       closeSheet(); render();
     });
 }
+/* Every suggestion in the Health tab can apply itself, but never silently:
+   this spells out the before and after first. */
+function askFix(fx){
+  if(!fx) return;
+  const b = B(), per = payPerYear(b);
+  let title = "Apply this change?", body = "", apply = null;
+  if(fx.act === "stretchGoal"){
+    const g = (b.goals||[]).find(x=>x.id===fx.id); if(!g) return;
+    const before = goalPerCheck(b,g);
+    const after = goalPerCheck(b, Object.assign({}, g, {months:fx.months}));
+    title = "Stretch " + g.name + "?";
+    body = `The deadline moves from <b>${fmtMY(goalEnd(b,g))}</b> to <b>${fmtMY(addMonths(goalStart(b,g), fx.months))}</b>.
+      Each paycheck puts in <b>${money(after)}</b> instead of ${money(before)}, which hands
+      <b>${money(before-after)}</b> a check back to the rest of your budget.
+      You still reach ${money(g.target)} — it just takes ${fx.months - (+g.months||12)} months longer.`;
+    apply = ()=>{ g.months = fx.months; };
+  } else if(fx.act === "trimAllowance"){
+    const from = +b.allowance||0;
+    title = "Trim loose spending money?";
+    body = `Your loose spending goes from <b>${money(from)}</b> to <b>${money(fx.to)}</b> a check,
+      freeing <b>${money((from-fx.to)*per/12)}</b> a month.
+      ${bucketTotal(b)>0?`Anything you've earmarked stays exactly as it is.`:""}`;
+    apply = ()=>{ b.allowance = fx.to; };
+  } else if(fx.act === "setAllowance"){
+    title = "Set aside spending money?";
+    body = `<b>${money(fx.to)}</b> comes out of every paycheck as spending money, or
+      <b>${money(fx.to*per/12)}</b> a month. You can split it into groceries, gas and the
+      rest afterwards under Money.`;
+    apply = ()=>{ b.allowance = fx.to; };
+  } else if(fx.act === "addEF"){
+    const g = { id:uid(), type:"savings", name:"Emergency fund", target:fx.amount,
+                months:fx.months, saved:0, start:iso(today()) };
+    title = "Start an emergency fund?";
+    body = `A goal of <b>${money(fx.amount)}</b> over <b>${fx.months} months</b>, which asks
+      <b>${money(goalPerCheck(b,g))}</b> of each paycheck. If that's too steep you can stretch
+      it afterwards, and the Health tab will tell you if it doesn't fit.`;
+    apply = ()=>{ b.goals = b.goals||[]; b.goals.push(g); };
+  } else if(fx.act === "splitBill"){
+    const e = b.expenses.find(x=>x.id===fx.id); if(!e) return;
+    const slices = Math.max(2, Math.round(per/12));
+    title = "Split " + e.name + " across paychecks?";
+    body = `Instead of <b>${money(e.amount)}</b> leaving one check, about
+      <b>${money((+e.amount||0)/slices)}</b> gets set aside from each check and the bill is
+      paid when it's due. The money stays in checking until then.`;
+    apply = ()=>{ e.sinking = true; e.splitManual = true; };
+  } else if(fx.act === "removeBill"){
+    const e = b.expenses.find(x=>x.id===fx.id); if(!e) return;
+    title = "Remove " + e.name + "?";
+    body = `It has a zero balance, so the <b>${money(monthlyCost(e))}</b> a month the plan is
+      holding back for it goes back into your paychecks. This deletes the bill for good.`;
+    apply = ()=>{ b.expenses = b.expenses.filter(x=>x.id!==fx.id); };
+  } else return;
+  openSheet(title, `
+    <p style="margin:16px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink2)">${body}</p>
+    <button class="btn ghost" style="margin-top:20px" data-act="closeSheet">Leave it as it is</button>`,
+    "Yes, update my budget", ()=>{
+      apply(); save(); closeSheet(); render(); toast("Budget updated");
+    });
+}
+
 function budgetSheet(){
   openSheet("Budgets", `
     <p class="sec-note" style="margin-top:12px">Keep more than one to test different goals against the same bills.</p>
@@ -1683,7 +2021,7 @@ function budgetSheet(){
       return `<button class="row" data-act="pickBudget" data-id="${x.id}">
         <span class="swatch" style="background:${x.id===store.activeId?'var(--pine)':'var(--line)'}"></span>
         <span class="row-main"><span class="row-title">${esc(x.name)}</span>
-          <span class="row-sub">${x.expenses.length} bills · ${(x.goals||[]).length} goals · health ${an.score}</span></span>
+          <span class="row-sub">${x.expenses.length} bills · ${(x.goals||[]).length} goals · health ${an.score}${x.sharedAt?" · shared "+fmtDate(D(x.sharedAt)):""}</span></span>
         <span class="row-amt">${money(an.leftM)}<small>spare/mo</small></span></button>`;
     }).join("")}</div>
     <button class="add" data-act="newBudget">+ Start a new budget</button>
@@ -1694,6 +2032,9 @@ function settingsSheet(){
   const b = B();
   openSheet("Settings", `
     <label class="f"><span>Budget name</span><input type="text" id="stName" value="${esc(b.name)}"></label>
+    <div class="hr"></div>
+    <button class="btn ghost" data-act="shareBudget">Share this budget with someone</button>
+    <div class="hint" style="margin-top:8px">Sends the whole budget inside a link, so you both see the same plan. The plain app address on its own carries no data.</div>
     <div class="hr"></div>
     <button class="btn ghost" data-act="export">Export a backup file</button>
     <button class="btn ghost" data-act="importBtn">Restore from a backup</button>
@@ -1709,7 +2050,7 @@ function settingsSheet(){
    ============================================================ */
 let ob = null;
 function startOnboarding(){
-  ob = { step:0, b:newBudget("My budget") };
+  ob = { step:0, b:newBudget("My budget"), editId:null, lastCat:"housing" };
   drawOb();
 }
 function drawOb(){
@@ -1738,16 +2079,38 @@ function drawOb(){
         <input type="number" inputmode="decimal" id="obStart" value="${b.startBalance||""}" step="0.01" placeholder="0.00"></div>
         <div class="hint">Optional. Monthly bills and biweekly pay never line up perfectly, and this is what bridges the gap between paydays.</div></label>`;
   } else if(s===2){
+    const ed = ob.editId ? b.expenses.find(x=>x.id===ob.editId) : null;
+    const curCat = ed ? ed.cat : (ob.lastCat || "housing");
     body = `<div class="ob-step">Step 2 of 4</div><h1>What has to get paid?</h1>
-      <p>Start with rent, then the rest. You can add more later, and every one you add gets re-slotted across your checks.</p>
-      <div class="two"><label class="f" style="flex:2"><span>Bill</span><input type="text" id="obName" placeholder="Rent"></label>
-        <label class="f" style="flex:1"><span>Amount</span><div class="money-in"><input type="number" inputmode="decimal" id="obBillAmt" step="0.01"></div></label></div>
-      <div class="two"><label class="f"><span>Category</span><select id="obCat">${CATS.map(c=>`<option value="${c.id}">${c.name}</option>`).join("")}</select></label>
-        <label class="f"><span>Due day</span><select id="obDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}">${ordinal(d)}</option>`).join("")}</select></label></div>
-      <button class="btn ghost" style="margin-top:14px" id="obAddBill">Add this bill</button>
-      <div class="mini-list">${b.expenses.map(e=>`<div class="mini"><i style="width:9px;height:9px;border-radius:2px;background:${catOf(e.cat).color};display:block"></i>
-        <b>${esc(e.name)}</b><em>${money2(e.amount)}</em>
-        <button data-ob-del="${e.id}" aria-label="Remove"><svg width="13" height="13" viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></div>`).join("")}</div>`;
+      <p>Pick what kind of bill it is and the name fills itself in. Add them one at a time — tap any bill below to change it.</p>
+      <label class="f"><span>Kind of bill</span>
+        <select id="obCat">${CATS.map(c=>`<option value="${c.id}" ${curCat===c.id?"selected":""}>${c.name}</option>`).join("")}</select></label>
+      <div class="two">
+        <label class="f" style="flex:1.6"><span>Name</span>
+          <input type="text" id="obName" value="${ed?esc(ed.name):esc(catOf(curCat).name)}"></label>
+        <label class="f" style="flex:1"><span>Amount</span>
+          <div class="money-in"><input type="number" inputmode="decimal" id="obBillAmt" step="0.01" value="${ed?ed.amount:""}"></div></label>
+      </div>
+      <label class="f"><span>How often</span>
+        <select id="obFreq2">${FREQS.map(f=>`<option value="${f.id}" ${(ed?(ed.freq||"monthly"):"monthly")===f.id?"selected":""}>${f.name}</option>`).join("")}</select></label>
+      <div id="obDueMonthly" style="display:${(ed?(ed.freq||"monthly"):"monthly")==="monthly"?"block":"none"}">
+        <label class="f"><span>Due day of the month</span>
+          <select id="obDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${(ed?ed.dueDay:1)===d?"selected":""}>${ordinal(d)}</option>`).join("")}</select></label>
+      </div>
+      <div id="obDueDated" style="display:${(ed?(ed.freq||"monthly"):"monthly")==="monthly"?"none":"block"}">
+        <label class="f"><span>Next time it's due</span>
+          <input type="date" id="obDueDate" value="${ed&&ed.dueDate?ed.dueDate:iso(addDays(today(),14))}">
+          <div class="hint">It'll repeat from this date onward.</div></label>
+      </div>
+      <button class="btn" style="margin-top:16px" id="obAddBill">${ed?"Save changes":"Add this bill"}</button>
+      ${ed?`<button class="btn ghost" id="obCancelEdit">Cancel</button>`:""}
+      <div class="mini-list">${b.expenses.map(e=>`<div class="mini">
+        <i style="width:9px;height:9px;border-radius:2px;background:${catOf(e.cat).color};display:block"></i>
+        <button data-ob-edit="${e.id}" style="flex:1;display:flex;gap:10px;align-items:center;text-align:left">
+          <b style="flex:1">${esc(e.name)}${(e.freq||"monthly")!=="monthly"?`<span style="display:block;font-size:11px;color:var(--ink3);font-weight:400">${(FREQS.find(f=>f.id===e.freq)||{}).name}</span>`:""}</b><em>${money2(e.amount)}</em></button>
+        <button data-ob-del="${e.id}" aria-label="Remove ${esc(e.name)}"><svg width="13" height="13" viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      </div>`).join("")}</div>
+      ${b.expenses.length?`<p class="hint">Anything over a fifth of your paycheck is split across checks automatically, and bills that come quarterly or yearly are saved for a bit at a time, so one check never swallows the whole thing.</p>`:""}`;
   } else if(s===3){
     const per = payPerYear(b);
     body = `<div class="ob-step">Step 3 of 4</div><h1>How much stays yours?</h1>
@@ -1771,7 +2134,7 @@ function drawOb(){
     <div class="ob-body">${body}</div>
     <div class="ob-foot"><div class="two">
       ${s>0?`<button class="btn ghost" id="obBack">Back</button>`:""}
-      <button class="btn" id="obNextBtn">${s===0?"Get started":s===4?"Build my plan":"Continue"}</button>
+      <button class="btn ${s===2?"ghost go":""}" id="obNextBtn">${s===0?"Get started":s===4?"Build my plan":s===2?"Done adding bills":"Continue"}</button>
     </div></div></div></div>`;
   if(s===3){
     const per = payPerYear(ob.b);
@@ -1788,15 +2151,42 @@ function drawOb(){
     $("obGMonths").addEventListener("change",upd);
   }
   if(s===2){
+    const nameEl = $("obName"), catEl = $("obCat");
+    // picking a category names the bill for you, unless you've typed your own
+    catEl.addEventListener("change", ()=>{
+      const cur = nameEl.value.trim();
+      if(cur === "" || CATS.some(c=>c.name === cur)) nameEl.value = catOf(catEl.value).name;
+    });
     $("obAddBill").addEventListener("click", ()=>{
-      const n = val("obName").trim(), a = parseFloat(val("obBillAmt"))||0;
+      const n = nameEl.value.trim(), a = parseFloat(val("obBillAmt"))||0;
       if(!n || a<=0){ toast("Add a name and an amount"); return; }
-      ob.b.expenses.push({ id:uid(), name:n, amount:a, cat:val("obCat"), freq:"monthly", dueDay:+val("obDay")||1 });
+      const rec = { name:n, amount:a, cat:catEl.value, freq:val("obFreq2")||"monthly",
+                    dueDay:+val("obDay")||1, dueDate:val("obDueDate")||iso(addDays(today(),14)) };
+      if(ob.editId){
+        const e = ob.b.expenses.find(x=>x.id===ob.editId);
+        Object.assign(e, rec); ob.editId = null;
+      } else {
+        ob.b.expenses.push({ id:uid(), ...rec });
+      }
+      ob.lastCat = rec.cat;
+      autoSplit(ob.b);
       drawOb();
     });
-    $("obRoot").addEventListener("click", ev=>{
-      const d = ev.target.closest("[data-ob-del]"); if(!d) return;
-      ob.b.expenses = ob.b.expenses.filter(x=>x.id!==d.dataset.obDel); drawOb();
+    $("obFreq2").addEventListener("change", ()=>{
+      const m = val("obFreq2") === "monthly";
+      $("obDueMonthly").style.display = m ? "block" : "none";
+      $("obDueDated").style.display   = m ? "none"  : "block";
+    });
+    if($("obCancelEdit")) $("obCancelEdit").addEventListener("click", ()=>{ ob.editId=null; drawOb(); });
+    $("obRoot").querySelectorAll("[data-ob-edit]").forEach(el=>{
+      el.addEventListener("click", ()=>{ ob.editId = el.dataset.obEdit; drawOb(); });
+    });
+    $("obRoot").querySelectorAll("[data-ob-del]").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        ob.b.expenses = ob.b.expenses.filter(x=>x.id!==el.dataset.obDel);
+        if(ob.editId === el.dataset.obDel) ob.editId = null;
+        drawOb();
+      });
     });
   }
   if($("obBack")) $("obBack").addEventListener("click", ()=>{ collectOb(); ob.step--; drawOb(); });
@@ -1843,6 +2233,8 @@ document.addEventListener("click", ev=>{
     if(t.closest(".tick")){ togglePaidByKey(it.dataset.item); return; }
     itemSheet(it.dataset.item, it.dataset.check); return;
   }
+  const fx = t.closest("[data-fix]");
+  if(fx){ askFix(FIXES[+fx.dataset.fix]); return; }
   const a = t.closest("[data-act]");
   if(!a) return;
   const id = a.dataset.id, b = B();
@@ -1853,12 +2245,17 @@ document.addEventListener("click", ev=>{
     case "delExpense": if(confirm("Delete this bill?")){ b.expenses = b.expenses.filter(x=>x.id!==id);
         Object.keys(b.pins||{}).forEach(k=>{ if(k.startsWith(id+"@")) delete b.pins[k]; });
         save(); closeSheet(); render(); toast("Deleted — plan rebalanced"); } break;
+    case "addBucket": bucketForm(null); break;
+    case "editBucket": closeSheet(); setTimeout(()=>bucketForm(id), 180); break;
+    case "delBucket": if(confirm("Delete this spending category?")){
+        b.buckets = (b.buckets||[]).filter(x=>x.id!==id); save(); closeSheet(); render(); } break;
     case "addExtra": extraForm(null); break;
     case "editExtra": extraForm(id); break;
     case "delExtra": b.extras = b.extras.filter(x=>x.id!==id); save(); closeSheet(); render(); break;
     case "addGoal": goalForm(null, a.dataset.type); break;
     case "editGoal": goalForm(id); break;
     case "delGoal": if(confirm("Delete this goal?")){ b.goals = b.goals.filter(x=>x.id!==id); save(); closeSheet(); render(); } break;
+    case "closeSheet": closeSheet(); break;
     case "toggleRollover": b.rollover = !b.rollover; save(); render(); break;
     case "clearPastDue": { b.paid = b.paid||{};
         PLAN.unfunded.forEach(o=>{ b.paid[o.key] = true; });
@@ -1866,12 +2263,13 @@ document.addEventListener("click", ev=>{
     case "evenOut": {
         const r = evenOut(b);
         if(!r.changed.length){ toast("Already about as even as the due dates allow"); break; }
-        b.expenses.forEach(e=>{ if(r.flags[e.id]) e.sinking = true; });
+        b.expenses.forEach(e=>{ if(r.flags[e.id]){ e.sinking = true; e.splitManual = true; } });
         save(); render();
         toast("Split "+r.changed.join(" and ")+" — now "+money(r.after.lo)+" to "+money(r.after.hi)+" a check");
       } break;
     case "splitBill": { const e = b.expenses.find(x=>x.id===id);
-        if(e){ e.sinking = true; save(); render(); toast("Split on — it'll come out of every check now"); } } break;
+        if(e){ e.sinking = true; e.splitManual = true; save(); render();
+          toast("Split on — it'll come out of every check now"); } } break;
     case "togglePaid": togglePaidByKey(a.dataset.key, true); break;
     case "checkin": { const p = pendingCheckin(b); if(p) openCheckin(p.id); } break;
     case "unpin": { const k = a.dataset.key; if(b.pins) delete b.pins[k]; save(); closeSheet(); render(); toast("Back on automatic"); } break;
@@ -1885,6 +2283,10 @@ document.addEventListener("click", ev=>{
     case "delBudget": if(store.budgets.length<2){ toast("This is your only budget"); break; }
         if(confirm("Delete \""+b.name+"\" for good?")){ store.budgets = store.budgets.filter(x=>x.id!==b.id);
           store.activeId = store.budgets[0].id; save(); closeSheet(); render(); } break;
+    case "shareBudget": shareSheet(); break;
+    case "shareAdd": applyShare("add"); break;
+    case "shareUpdate": applyShare("update"); break;
+    case "shareSkip": applyShare("skip"); break;
     case "export": exportData(); break;
     case "importBtn": $("importFile").click(); break;
   }
