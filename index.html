@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Paycheck Plan</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Paycheck">
+<meta name="theme-color" content="#0F2A22">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{
+  --ink:#12261F; --ink2:#3E544B; --ink3:#748A80;
+  --paper:#E8EDE7; --surface:#FFFFFF; --line:#D2DBD3; --line2:#E3E9E3;
+  --pine:#1E5C46; --pine-deep:#0F2A22; --pine-soft:#DCE9E0;
+  --steel:#3D6E93; --violet:#6A5DA6; --clay:#B34432; --amber:#B5820F;
+  --serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --shadow: 0 1px 2px rgba(18,38,31,.06), 0 6px 20px rgba(18,38,31,.09);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--sans); background:var(--paper); color:var(--ink);
+  font-size:16px; line-height:1.45; -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:none;border:0;padding:0;cursor:pointer}
+.num{font-family:var(--serif); font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+.app{max-width:560px;margin:0 auto;min-height:100vh;position:relative}
+
+/* ---------- header ---------- */
+.top{
+  position:sticky;top:0;z-index:30;background:var(--pine-deep);color:#EAF1EB;
+  padding:calc(env(safe-area-inset-top) + 14px) 18px 14px;
+}
+.top-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.budget-switch{display:flex;align-items:center;gap:7px;font-size:15px;font-weight:600;color:#EAF1EB}
+.budget-switch svg{opacity:.6}
+.top-actions{display:flex;gap:6px}
+.icon-btn{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#EAF1EB;background:rgba(255,255,255,.09)}
+.top-headline{margin-top:14px;display:flex;align-items:flex-end;justify-content:space-between;gap:14px}
+.top-headline .big{font-family:var(--serif);font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
+.top-headline .lbl{font-size:12.5px;color:#9FBBAB;margin-bottom:3px}
+.top-sub{margin-top:6px;font-size:13px;color:#9FBBAB}
+.top-sub b{color:#D7E6DB;font-weight:600}
+
+/* ---------- layout ---------- */
+main{padding:16px 16px calc(96px + env(safe-area-inset-bottom))}
+.view{display:none}
+.view.on{display:block}
+h2.sec{font-family:var(--serif);font-size:21px;font-weight:600;margin:26px 0 4px;letter-spacing:-.015em}
+h2.sec:first-child{margin-top:4px}
+.sec-note{font-size:13.5px;color:var(--ink3);margin:0 0 14px;max-width:46ch}
+.hr{height:1px;background:var(--line);margin:22px 0}
+
+/* ---------- bottom nav ---------- */
+nav.tabs{
+  position:fixed;bottom:0;left:0;right:0;z-index:40;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-top:1px solid var(--line);
+  padding:7px 6px calc(6px + env(safe-area-inset-bottom));
+  display:flex;
+}
+nav.tabs .inner{max-width:560px;margin:0 auto;display:flex;width:100%}
+nav.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink3);font-size:10.5px;font-weight:500;padding:4px 0}
+nav.tabs button.on{color:var(--pine)}
+nav.tabs button.on .dot{opacity:1}
+.dot{width:4px;height:4px;border-radius:50%;background:var(--pine);opacity:0}
+
+/* ---------- equalizer ---------- */
+.eq-wrap{background:var(--surface);border-radius:16px;padding:16px 14px 12px;box-shadow:var(--shadow);margin-bottom:8px}
+.eq-head{display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 12px}
+.eq-head h3{margin:0;font-size:14px;font-weight:600}
+.eq-head span{font-size:12.5px;color:var(--ink3)}
+.eq{display:flex;align-items:flex-end;gap:5px;height:96px;padding:0 2px}
+.eq-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:5px}
+.eq-bar{width:100%;border-radius:4px 4px 2px 2px;background:var(--pine-soft);position:relative;min-height:4px;transition:height .35s cubic-bezier(.2,.7,.3,1);overflow:hidden}
+.eq-fill{position:absolute;left:0;right:0;bottom:0;background:var(--pine)}
+.eq-col.hot .eq-fill{background:var(--clay)}
+.eq-col.warm .eq-fill{background:var(--amber)}
+.eq-col small{font-size:9.5px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.eq-col.sel small{color:var(--ink);font-weight:700}
+.eq-legend{display:flex;gap:14px;padding:12px 4px 0;font-size:11.5px;color:var(--ink3);border-top:1px solid var(--line2);margin-top:12px}
+.eq-legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+
+/* ---------- check card ---------- */
+.check{
+  background:var(--surface);border-radius:14px;margin-top:12px;box-shadow:var(--shadow);
+  overflow:hidden;position:relative;
+}
+.check.past{opacity:.55}
+.check::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:3px;
+  background:repeating-linear-gradient(90deg,var(--line) 0 5px,transparent 5px 10px);
+}
+.check-head{display:flex;align-items:center;justify-content:space-between;padding:15px 16px 12px;gap:12px;width:100%;text-align:left}
+.check-when{font-size:11.5px;color:var(--ink3);letter-spacing:.02em}
+.check-date{font-family:var(--serif);font-size:18px;font-weight:600;margin-top:1px}
+.check-amt{text-align:right}
+.check-amt .in{font-size:11.5px;color:var(--ink3)}
+.check-amt .left{font-family:var(--serif);font-size:20px;font-variant-numeric:tabular-nums}
+.check-amt .left.neg{color:var(--clay)}
+.bar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--pine-soft);margin:0 16px}
+.bar span{display:block;height:100%}
+.s-bill{background:var(--pine)} .s-debt{background:var(--clay)} .s-goal{background:var(--violet)} .s-allow{background:var(--steel)} .s-over{background:repeating-linear-gradient(45deg,var(--clay) 0 4px,#8f3627 4px 8px)}
+.check-meta{display:flex;gap:12px;padding:9px 16px 14px;font-size:11.5px;color:var(--ink3);flex-wrap:wrap}
+.check-meta b{font-weight:600;color:var(--ink2);font-variant-numeric:tabular-nums}
+.check-body{border-top:1px solid var(--line2);padding:4px 0 6px;display:none}
+.check.open .check-body{display:block}
+.check.open .chev{transform:rotate(90deg)}
+.chev{transition:transform .2s;color:var(--ink3);flex:none}
+.item{display:flex;align-items:center;gap:11px;padding:10px 16px;width:100%;text-align:left}
+.item + .item{border-top:1px solid var(--line2)}
+.tick{width:21px;height:21px;border-radius:6px;border:1.5px solid var(--line);flex:none;display:grid;place-items:center;color:transparent}
+.tick.done{background:var(--pine);border-color:var(--pine);color:#fff}
+.item-main{flex:1;min-width:0}
+.item-name{font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item.done .item-name{text-decoration:line-through;color:var(--ink3)}
+.item-sub{font-size:11.5px;color:var(--ink3);display:flex;align-items:center;gap:6px;margin-top:1px}
+.item-amt{font-family:var(--serif);font-size:15px;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;letter-spacing:.02em}
+.pill.moved{background:#EFEAF7;color:var(--violet)}
+.pill.pin{background:#E7EEF4;color:var(--steel)}
+.pill.late{background:#F7E5E2;color:var(--clay)}
+.empty-check{padding:14px 16px;font-size:13px;color:var(--ink3)}
+/* ---------- generic surfaces ---------- */
+.card{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.card + .card{margin-top:12px}
+.row{display:flex;align-items:center;gap:12px;padding:13px 15px;width:100%;text-align:left}
+.row + .row{border-top:1px solid var(--line2)}
+.row-main{flex:1;min-width:0}
+.row-title{font-size:15px;font-weight:500}
+.row-sub{font-size:12px;color:var(--ink3);margin-top:1px}
+.row-amt{font-family:var(--serif);font-size:16px;font-variant-numeric:tabular-nums;text-align:right}
+.row-amt small{display:block;font-family:var(--sans);font-size:11px;color:var(--ink3)}
+.swatch{width:9px;height:34px;border-radius:3px;flex:none}
+.add{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:13px;font-size:14.5px;font-weight:600;color:var(--pine);background:var(--surface);border-radius:14px;box-shadow:var(--shadow);margin-top:12px}
+.btn{display:block;width:100%;padding:14px;border-radius:11px;background:var(--pine);color:#fff;font-size:15.5px;font-weight:600;text-align:center}
+.btn:disabled{opacity:.4}
+.btn.ghost{background:transparent;color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line)}
+.btn.danger{background:transparent;color:var(--clay);box-shadow:inset 0 0 0 1px #E9C9C3}
+.btn + .btn{margin-top:9px}
+.empty{background:var(--surface);border-radius:14px;padding:26px 20px;text-align:center;box-shadow:var(--shadow)}
+.empty h4{font-family:var(--serif);font-size:17px;margin:0 0 6px;font-weight:600}
+.empty p{margin:0 0 16px;font-size:13.5px;color:var(--ink3);line-height:1.5}
+.empty .btn{max-width:230px;margin:0 auto}
+
+/* ---------- forms ---------- */
+label.f{display:block;margin-top:15px}
+label.f > span{display:block;font-size:12.5px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+.hint{font-size:11.5px;color:var(--ink3);font-weight:400;margin-top:5px;line-height:1.4}
+input[type=text],input[type=number],input[type=date],select,textarea{
+  width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:16px;
+  appearance:none;-webkit-appearance:none;
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--pine);outline-offset:-1px;border-color:var(--pine)}
+select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' stroke='%23748A80' stroke-width='1.6' fill='none' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 13px center}
+.money-in{position:relative}
+.money-in input{padding-left:28px}
+.money-in::before{content:"$";position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--ink3);font-family:var(--serif)}
+.seg{display:flex;background:var(--paper);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1;padding:9px 4px;border-radius:8px;font-size:13px;font-weight:600;color:var(--ink2)}
+.seg button.on{background:var(--surface);color:var(--pine);box-shadow:0 1px 3px rgba(18,38,31,.12)}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{padding:8px 12px;border-radius:9px;background:var(--paper);font-size:13px;font-weight:500;display:flex;align-items:center;gap:7px}
+.chip.on{background:var(--pine);color:#fff}
+.chip i{width:8px;height:8px;border-radius:2px;display:block}
+.chip.on i{background:#fff !important}
+.two{display:flex;gap:10px}
+.two > *{flex:1}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 0;border-top:1px solid var(--line2);margin-top:14px}
+.toggle-txt{font-size:14px;font-weight:500}
+.toggle-txt small{display:block;font-size:11.5px;color:var(--ink3);font-weight:400;margin-top:2px}
+.sw{width:48px;height:29px;border-radius:15px;background:var(--line);flex:none;position:relative;transition:background .2s}
+.sw::after{content:"";position:absolute;top:2.5px;left:2.5px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s}
+.sw.on{background:var(--pine)}
+.sw.on::after{transform:translateX(19px)}
+input[type=range]{width:100%;-webkit-appearance:none;background:transparent;margin:10px 0 2px}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:var(--line)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;border:1px solid var(--line);box-shadow:0 1px 4px rgba(18,38,31,.25);margin-top:-11px}
+input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:var(--line)}
+input[type=range]::-moz-range-thumb{width:24px;height:24px;border:1px solid var(--line);border-radius:50%;background:#fff}
+
+/* ---------- sheet ---------- */
+.scrim{position:fixed;inset:0;background:rgba(12,26,21,.42);z-index:50;opacity:0;pointer-events:none;transition:opacity .22s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--paper);
+  border-radius:20px 20px 0 0;max-height:92vh;display:flex;flex-direction:column;
+  transform:translateY(101%);transition:transform .28s cubic-bezier(.2,.8,.3,1);
+  max-width:560px;margin:0 auto;
+}
+.sheet.on{transform:translateY(0)}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--line);flex:none}
+.sheet-head h3{margin:0;font-family:var(--serif);font-size:19px;font-weight:600}
+.sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 18px 18px}
+.sheet-foot{padding:14px 18px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--paper);flex:none}
+.x{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--ink2);background:rgba(18,38,31,.06)}
+
+/* ---------- goals ---------- */
+.goal{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);padding:15px 16px;margin-top:12px}
+.goal-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.goal-name{font-size:15.5px;font-weight:600}
+.goal-when{font-size:12px;color:var(--ink3);margin-top:2px}
+.goal-per{text-align:right;flex:none}
+.goal-per b{font-family:var(--serif);font-size:19px;font-variant-numeric:tabular-nums;display:block}
+.goal-per small{font-size:10.5px;color:var(--ink3)}
+.track{height:7px;border-radius:4px;background:var(--paper);margin:13px 0 7px;overflow:hidden}
+.track span{display:block;height:100%;border-radius:4px}
+.goal-foot{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink3);font-variant-numeric:tabular-nums}
+
+/* ---------- analysis ---------- */
+.score{background:var(--surface);border-radius:16px;box-shadow:var(--shadow);padding:20px;display:flex;align-items:center;gap:18px}
+.dial{width:78px;height:78px;flex:none;position:relative}
+.dial svg{transform:rotate(-90deg)}
+.dial b{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--serif);font-size:24px}
+.score-txt h3{margin:0 0 4px;font-family:var(--serif);font-size:18px;font-weight:600}
+.score-txt p{margin:0;font-size:13px;color:var(--ink3);line-height:1.45}
+.flag{background:var(--surface);border-radius:13px;box-shadow:var(--shadow);padding:14px 15px;margin-top:11px;border-left:4px solid var(--line)}
+.flag.crit{border-left-color:var(--clay)}
+.flag.watch{border-left-color:var(--amber)}
+.flag.good{border-left-color:var(--pine)}
+.flag h4{margin:0 0 5px;font-size:14.5px;font-weight:600;display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.flag h4 em{font-style:normal;font-family:var(--serif);font-variant-numeric:tabular-nums;font-size:15px;flex:none}
+.flag p{margin:0;font-size:13px;color:var(--ink2);line-height:1.5}
+.flag p + p{margin-top:7px;color:var(--ink3)}
+.flag p.fix{color:var(--pine);font-weight:500}
+.cmp{width:100%;border-collapse:collapse;background:var(--surface);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);font-size:13.5px}
+.cmp th,.cmp td{padding:11px 12px;text-align:right;border-bottom:1px solid var(--line2)}
+.cmp th:first-child,.cmp td:first-child{text-align:left;color:var(--ink3);font-weight:400;font-size:12.5px}
+.cmp thead th{font-size:12px;font-weight:600;background:var(--pine-soft)}
+.cmp td{font-family:var(--serif);font-variant-numeric:tabular-nums}
+.cmp tr:last-child td{border-bottom:0}
+
+/* ---------- onboarding ---------- */
+.ob{position:fixed;inset:0;z-index:80;background:var(--paper);display:flex;flex-direction:column;overflow:hidden}
+.ob-in{max-width:560px;margin:0 auto;width:100%;display:flex;flex-direction:column;height:100%}
+.ob-bar{height:3px;background:var(--line);flex:none}
+.ob-bar span{display:block;height:100%;background:var(--pine);transition:width .3s}
+.ob-body{flex:1;overflow-y:auto;padding:26px 22px calc(20px + env(safe-area-inset-bottom))}
+.ob-step{font-size:12px;color:var(--ink3);letter-spacing:.03em}
+.ob-body h1{font-family:var(--serif);font-size:29px;line-height:1.15;margin:8px 0 10px;font-weight:600;letter-spacing:-.02em}
+.ob-body > p{font-size:14.5px;color:var(--ink2);line-height:1.5;margin:0 0 6px;max-width:44ch}
+.ob-foot{padding:14px 22px calc(18px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface);flex:none}
+.ob-foot .two{gap:10px}
+.mini-list{margin-top:14px}
+.mini{display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--surface);border-radius:11px;margin-bottom:8px;box-shadow:0 1px 2px rgba(18,38,31,.07)}
+.mini b{flex:1;font-size:14px;font-weight:500}
+.mini em{font-style:normal;font-family:var(--serif);font-variant-numeric:tabular-nums}
+.mini button{color:var(--ink3);padding:4px}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translate(-50%,14px);background:var(--pine-deep);color:#EAF1EB;padding:11px 17px;border-radius:11px;font-size:13.5px;z-index:70;opacity:0;pointer-events:none;transition:all .25s;max-width:88%;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="top-row">
+      <button class="budget-switch" id="budgetBtn">
+        <span id="budgetName">My budget</span>
+        <svg width="11" height="7" viewBox="0 0 11 7" fill="none"><path d="M1 1l4.5 4.5L10 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+      <div class="top-actions">
+        <button class="icon-btn" id="settingsBtn" aria-label="Settings">
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"/><path d="M10 2.2v2M10 15.8v2M17.8 10h-2M4.2 10h-2M15.5 4.5l-1.4 1.4M5.9 14.1l-1.4 1.4M15.5 15.5l-1.4-1.4M5.9 5.9L4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="top-headline">
+      <div>
+        <div class="lbl" id="topLabel">Left over each month</div>
+        <div class="big num" id="topBig">$0</div>
+      </div>
+      <div style="text-align:right">
+        <div class="lbl">Next payday</div>
+        <div style="font-size:14px;font-weight:600" id="topNext">--</div>
+      </div>
+    </div>
+    <div class="top-sub" id="topSub"></div>
+  </header>
+
+  <main>
+    <section class="view on" id="view-plan"></section>
+    <section class="view" id="view-money"></section>
+    <section class="view" id="view-goals"></section>
+    <section class="view" id="view-debt"></section>
+    <section class="view" id="view-health"></section>
+  </main>
+</div>
+
+<nav class="tabs"><div class="inner" id="tabbar"></div></nav>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="sheet-head"><h3 id="sheetTitle"></h3><button class="x" id="sheetClose" aria-label="Close">
+    <svg width="14" height="14" viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></div>
+  <div class="sheet-body" id="sheetBody"></div>
+  <div class="sheet-foot" id="sheetFoot"></div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="obRoot"></div>
+<script>
+"use strict";
+/* ============================================================
+   Paycheck Plan — data, engine
+   ============================================================ */
+const KEY = "paycheckplan.v1";
+const CATS = [
+  {id:"housing",   name:"Rent / mortgage", color:"#1E5C46", group:"housing"},
+  {id:"utilities", name:"Utilities",       color:"#2F7A5A", group:"essential"},
+  {id:"car",       name:"Car payment",     color:"#3D6E93", group:"transport"},
+  {id:"carcost",   name:"Gas / transit / repairs", color:"#5A87A8", group:"transport"},
+  {id:"insurance", name:"Insurance",       color:"#4C7FA8", group:"essential"},
+  {id:"groceries", name:"Groceries",       color:"#6E9B4F", group:"essential"},
+  {id:"phone",     name:"Phone / internet",color:"#7FA36A", group:"essential"},
+  {id:"creditcard",name:"Credit card debt",color:"#B34432", group:"debt"},
+  {id:"loan",      name:"Loan payment",    color:"#C4614A", group:"debt"},
+  {id:"childcare", name:"Childcare / support", color:"#8A6BB0", group:"essential"},
+  {id:"medical",   name:"Medical",         color:"#6A5DA6", group:"essential"},
+  {id:"subs",      name:"Subscriptions",   color:"#B5820F", group:"lifestyle"},
+  {id:"other",     name:"Other",           color:"#748A80", group:"lifestyle"}
+];
+const catOf = id => CATS.find(c=>c.id===id) || CATS[CATS.length-1];
+const FREQS = [
+  {id:"monthly", name:"Monthly", perYear:12},
+  {id:"biweekly",name:"Every 2 weeks", perYear:26},
+  {id:"weekly",  name:"Weekly", perYear:52},
+  {id:"quarterly",name:"Every 3 months", perYear:4},
+  {id:"annual",  name:"Yearly", perYear:1},
+  {id:"once",    name:"One time", perYear:0}
+];
+const PAYF = [
+  {id:"biweekly",   name:"Every 2 weeks", perYear:26},
+  {id:"weekly",     name:"Weekly", perYear:52},
+  {id:"semimonthly",name:"Twice a month", perYear:24},
+  {id:"monthly",    name:"Monthly", perYear:12}
+];
+
+/* ---------- small utils ---------- */
+const uid = () => Math.random().toString(36).slice(2,10);
+const money = n => (n<0?"-":"") + "$" + Math.abs(Math.round(n)).toLocaleString();
+const money2 = n => (n<0?"-":"") + "$" + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const clamp = (n,a,b) => Math.max(a, Math.min(b,n));
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function D(s){ if(s instanceof Date) return new Date(s.getFullYear(),s.getMonth(),s.getDate());
+  const p = String(s).split("-").map(Number); return new Date(p[0], p[1]-1, p[2]); }
+const iso = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+function addMonths(d,n){ const x=new Date(d.getFullYear(), d.getMonth()+n, 1);
+  const last = new Date(x.getFullYear(), x.getMonth()+1, 0).getDate();
+  x.setDate(Math.min(d.getDate(), last)); return x; }
+const lastDay = (y,m) => new Date(y, m+1, 0).getDate();
+const today = () => D(new Date());
+const fmtDate = d => d.toLocaleDateString(undefined,{month:"short", day:"numeric"});
+const fmtLong = d => d.toLocaleDateString(undefined,{weekday:"short", month:"short", day:"numeric"});
+const fmtMY   = d => d.toLocaleDateString(undefined,{month:"short", year:"numeric"});
+const dayDiff = (a,b) => Math.round((D(b)-D(a))/86400000);
+
+/* ---------- store ---------- */
+let store = { budgets:[], activeId:null, seenIntro:false };
+function load(){
+  try{ const raw = localStorage.getItem(KEY); if(raw){ const p = JSON.parse(raw); if(p && p.budgets) store = p; } }
+  catch(e){ console.warn("load failed", e); }
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(store)); }
+  catch(e){ toast("Couldn't save — device storage is full or blocked"); }
+}
+function newBudget(name){
+  return { id:uid(), name:name||"My budget", created:iso(today()),
+    pay:{ amount:0, freq:"biweekly", next:iso(addDays(today(),7)) },
+    extras:[], expenses:[], goals:[], allowance:0, horizon:6, startBalance:0,
+    rollover:true, pins:{}, paid:{}, snaps:{}, log:{} };
+}
+const B = () => store.budgets.find(b=>b.id===store.activeId) || store.budgets[0];
+
+/* ============================================================
+   Paycheck + bill occurrence generation
+   ============================================================ */
+function payPerYear(b){ return (PAYF.find(f=>f.id===b.pay.freq)||PAYF[0]).perYear; }
+function monthlyIncome(b){
+  const base = (b.pay.amount||0) * payPerYear(b) / 12;
+  return base;
+}
+function genChecks(b){
+  const out=[]; const start = today();
+  const visibleEnd = addMonths(start, b.horizon||6);
+  const end = addDays(visibleEnd, 70);
+  let d = D(b.pay.next || iso(start));
+  // wind back to first check on/after today if the stored next date is in the past
+  let guard=0;
+  while(d < start && guard++ < 400){ d = nextPay(d, b.pay.freq, b); }
+  guard=0;
+  while(d <= end && guard++ < 400){
+    out.push({ id:"c"+iso(d), date:new Date(d), income:(b.pay.amount||0), items:[], extras:[],
+                partial: d > visibleEnd });
+    d = nextPay(d, b.pay.freq, b);
+  }
+  // one-off extra income
+  (b.extras||[]).forEach(x=>{
+    const xd = D(x.date); let best=null;
+    out.forEach(c=>{ if(iso(c.date)===iso(xd)) best=c; });
+    if(!best){ for(let i=0;i<out.length;i++){ if(out[i].date >= xd){ best=out[i]; break; } } }
+    if(!best && out.length) best = out[out.length-1];
+    if(best){ best.income += (x.amount||0); best.extras.push(x); }
+  });
+  return out;
+}
+function nextPay(d, freq, b){
+  if(freq==="weekly") return addDays(d,7);
+  if(freq==="biweekly") return addDays(d,14);
+  if(freq==="monthly") return addMonths(d,1);
+  // semimonthly: keep the entered day, plus a second check ~15 days later
+  const day = d.getDate();
+  const anchor = b && b.pay && b.pay.next ? D(b.pay.next).getDate() : 1;
+  if(day === anchor){ const ld = lastDay(d.getFullYear(), d.getMonth());
+    return new Date(d.getFullYear(), d.getMonth(), Math.min(anchor+15, ld)); }
+  return addMonths(new Date(d.getFullYear(), d.getMonth(), anchor), 1);
+}
+function occKey(e, dueIso){ return e.id + "@" + dueIso; }
+function genOccurrences(b, endDate){
+  const out=[]; const start = today();
+  (b.expenses||[]).forEach(e=>{
+    if(e.paused) return;
+    const amt = +e.amount || 0;
+    const f = e.freq || "monthly";
+    if(f==="monthly"){
+      let m = new Date(start.getFullYear(), start.getMonth(), 1);
+      for(let i=0;i<40;i++){
+        const day = Math.min(e.dueDay||1, lastDay(m.getFullYear(), m.getMonth()));
+        const due = new Date(m.getFullYear(), m.getMonth(), day);
+        if(due>=start && due<=endDate) out.push(mk(e, due, amt));
+        m = addMonths(m,1); if(m>endDate) break;
+      }
+    } else if(f==="weekly" || f==="biweekly"){
+      const step = f==="weekly"?7:14; let d = D(e.dueDate||iso(today()));
+      let g=0; while(d<start && g++<500) d = addDays(d, step);
+      g=0; while(d<=endDate && g++<500){ out.push(mk(e, d, amt)); d = addDays(d, step); }
+    } else if(f==="quarterly" || f==="annual"){
+      const step = f==="quarterly"?3:12; let d = D(e.dueDate||iso(today()));
+      let g=0; while(d<start && g++<60) d = addMonths(d, step);
+      g=0; while(d<=endDate && g++<60){ out.push(mk(e, d, amt)); d = addMonths(d, step); }
+      // also look one period back so a "set aside gradually" bill can start saving early
+      if(e.sinking){ /* handled separately */ }
+    } else if(f==="once"){
+      const d = D(e.dueDate||iso(today()));
+      if(d>=start && d<=endDate) out.push(mk(e, d, amt));
+    }
+  });
+  return out;
+}
+function mk(e, due, amt){
+  return { key:occKey(e, iso(due)), eid:e.id, name:e.name, cat:e.cat, amount:amt, freq:e.freq||"monthly",
+           due:due, sinking:!!e.sinking, autopay:!!e.autopay };
+}
+// the window a split bill saves up over: back one full cycle from its due date
+function cycleStart(o){
+  const d = o.due;
+  if(o.freq==="weekly")    return addDays(d,-7);
+  if(o.freq==="biweekly")  return addDays(d,-14);
+  if(o.freq==="quarterly") return addMonths(d,-3);
+  if(o.freq==="annual")    return addMonths(d,-12);
+  if(o.freq==="once")      return addDays(today(),-1);
+  return addMonths(d,-1);
+}
+function monthlyCost(e){
+  const f = FREQS.find(x=>x.id===(e.freq||"monthly"));
+  if(!f || f.perYear===0) return 0;
+  return (+e.amount||0) * f.perYear / 12;
+}
+
+/* ============================================================
+   The plan: assign every bill to a paycheck, then level the load
+   ============================================================ */
+function goalStart(b,g){ return D(g.start || b.created || iso(today())); }
+function goalEnd(b,g){ return addMonths(goalStart(b,g), +g.months||12); }
+function goalMonthsLeft(b,g){
+  const st = goalStart(b,g), now = today();
+  const gone = Math.max(0, (now.getFullYear()-st.getFullYear())*12 + (now.getMonth()-st.getMonth()));
+  return Math.max(1, (+g.months||12) - gone);
+}
+function goalPerCheck(b, g){
+  const per = payPerYear(b);
+  const months = goalMonthsLeft(b, g);
+  if(g.type==="savings"){
+    const remaining = Math.max(0, (+g.target||0) - (+g.saved||0));
+    if(remaining <= 0) return 0;
+    return remaining / months * 12 / per;
+  }
+  // debt goal: pay off `target` within months (interest approximated)
+  const bal = +g.target||0, apr=(+g.apr||0)/100;
+  if(bal<=0) return 0;
+  const r = apr/12, n = months;
+  const pmt = r>0 ? bal*r/(1-Math.pow(1+r,-n)) : bal/n;
+  return pmt * 12 / per;
+}
+function buildPlan(b){
+  const checks = genChecks(b);
+  const end = checks.length ? checks[checks.length-1].date : addMonths(today(), b.horizon||6);
+  const occs = genOccurrences(b, end);
+  const per = payPerYear(b);
+  const goals = (b.goals||[]).map(g=>({ ...g, per:goalPerCheck(b,g) }));
+  const goalTotal = goals.reduce((s,g)=>s+g.per,0);
+  const allowance = +b.allowance||0;
+
+  if(!checks.length) return { checks:[], occs:[], goals, goalTotal, allowance, unfunded:[], per };
+
+  // split bills: save a slice from each check inside that bill's own cycle, so one
+  // occurrence is never charged to more checks than it has time to save across
+  const sinkingRes = [];
+  occs.forEach(o=>{
+    if(!o.sinking) return;
+    const from = cycleStart(o);
+    const span = checks.filter(c => c.date <= o.due && c.date > from);
+    if(span.length > 1){
+      o.spread = o.amount / span.length;
+      o.spanIds = span.reduce((m,c)=>{ m[c.id]=true; return m; }, {});
+      sinkingRes.push(o);
+    }
+  });
+
+  // starting assignment: the latest paycheck that still lands on or before the due date
+  const assign = new Map();
+  const unfunded = [];
+  occs.forEach(o=>{
+    if(o.spread!=null) return;
+    const pin = b.pins && b.pins[o.key];
+    let idx = -1;
+    if(pin){ idx = checks.findIndex(c=>c.id===pin); }
+    if(idx<0){
+      for(let i=0;i<checks.length;i++){ if(checks[i].date <= o.due) idx = i; }
+    }
+    if(idx<0){ unfunded.push(o); idx = 0; o.late = true; }
+    o.pinned = !!pin && checks.some(c=>c.id===pin);
+    o.natural = (function(){ let k=-1; for(let i=0;i<checks.length;i++) if(checks[i].date<=o.due) k=i; return k; })();
+    assign.set(o.key, idx);
+  });
+
+  // fixed load that every check carries no matter what
+  const fixed = checks.map(c=>{
+    let f = allowance + goalTotal;
+    sinkingRes.forEach(o=>{ if(o.spanIds[c.id]) f += o.spread; });
+    return f;
+  });
+  const income = checks.map(c=>c.income);
+  const loads = checks.map((c,i)=>fixed[i]);
+  occs.forEach(o=>{ if(o.spread==null) loads[assign.get(o.key)] += o.amount; });
+
+  // level it out: move flexible bills to earlier eligible checks to cut the worst peak.
+  // Only a couple of checks early — paying February's car note in September is not help.
+  const MAX_EARLY = 2;
+  const ratio = (l,i) => income[i]>0 ? l/income[i] : (l>0?9:0);
+  const score = arr => { let mx=0,ss=0; for(let i=0;i<arr.length;i++){ const r=ratio(arr[i],i); if(r>mx)mx=r; ss+=r*r; } return mx*100+ss; };
+  const movable = occs.filter(o=>o.spread==null && !o.pinned && !o.autopay && !o.late);
+  let cur = score(loads);
+  for(let round=0; round<80; round++){
+    let best=null;
+    for(const o of movable){
+      const from = assign.get(o.key);
+      const earliest = Math.max(0, o.natural - MAX_EARLY);
+      for(let j=earliest;j<=o.natural;j++){
+        if(j===from) continue;
+        loads[from]-=o.amount; loads[j]+=o.amount;
+        const s = score(loads);
+        loads[from]+=o.amount; loads[j]-=o.amount;
+        if(s < cur - 1e-9 && (!best || s < best.s)) best = {o, from, to:j, s};
+      }
+    }
+    if(!best) break;
+    loads[best.from]-=best.o.amount; loads[best.to]+=best.o.amount;
+    assign.set(best.o.key, best.to); cur = best.s;
+  }
+
+  // pack results onto each check
+  checks.forEach((c,i)=>{
+    c.bills=0; c.debtBills=0; c.items=[];
+    c.allowance = allowance; c.goalTotal = goalTotal; c.goals = goals;
+    c.sinking = [];
+    sinkingRes.forEach(o=>{ if(o.spanIds[c.id]){ c.sinking.push({name:o.name, amount:o.spread, due:o.due, key:o.key}); } });
+    c.sinkTotal = c.sinking.reduce((s,x)=>s+x.amount,0);
+  });
+  occs.forEach(o=>{
+    if(o.spread!=null) return;
+    const c = checks[assign.get(o.key)];
+    o.movedEarly = assign.get(o.key) < o.natural;
+    o.checkId = c.id;
+    c.items.push(o);
+    c.bills += o.amount;
+    if(catOf(o.cat).group==="debt") c.debtBills += o.amount;
+  });
+  checks.forEach(c=>{
+    c.items.sort((a,b2)=> a.due-b2.due || b2.amount-a.amount);
+    c.paidTotal = c.items.reduce((s,o)=> s + ((b.paid&&b.paid[o.key])?o.amount:0), 0);
+    c.spent = (c.bills - c.paidTotal) + c.sinkTotal + c.allowance + c.goalTotal;
+    c.left = c.income - c.spent;              // money left from this paycheck alone
+    c.load = c.income>0 ? c.spent/c.income : (c.spent>0?9:0);
+    c.dry  = c.load > 1.0001;
+  });
+  // running checking balance over the next few months, so we can tell the user how
+  // much of a float the monthly-bills-vs-biweekly-pay mismatch actually needs
+  let bal = +b.startBalance || 0, dip = bal;
+  const soon = addDays(today(), 95);
+  checks.forEach(c=>{
+    if(c.date > soon) return;
+    bal += c.left;
+    c.balance = bal;
+    if(bal < dip) dip = bal;
+  });
+  return { checks: checks.filter(c=>!c.partial), occs, goals, goalTotal, allowance, unfunded, per,
+           buffer: Math.max(0, -dip) };
+}
+
+/* ============================================================
+   Debt payoff simulation (snowball vs avalanche)
+   ============================================================ */
+function debtList(b){
+  return (b.expenses||[]).filter(e=> e.cat==="creditcard" || e.cat==="loan")
+    .map(e=>({ id:e.id, name:e.name, cat:e.cat, balance:+e.balance||0, apr:+e.apr||0,
+               min:monthlyCost(e) }))
+    .filter(d=> d.balance>0);
+}
+function simulate(debts, extra, method){
+  const ds = debts.map(d=>({...d, paidMonth:null}));
+  let months=0, interest=0, guard=0;
+  const timeline=[];
+  while(ds.some(d=>d.balance>0.005) && guard++ < 600){
+    months++;
+    let pool = extra;
+    ds.forEach(d=>{
+      if(d.balance<=0) return;
+      const i = d.balance * (d.apr/100/12);
+      d.balance += i; interest += i;
+    });
+    // minimums first
+    ds.forEach(d=>{
+      if(d.balance<=0) return;
+      const pay = Math.min(d.balance, d.min);
+      d.balance -= pay;
+      if(d.min > pay) pool += (d.min - pay);
+    });
+    // freed-up minimums from finished debts roll forward
+    ds.forEach(d=>{ if(d.balance<=0.005 && d.paidMonth===null){ d.balance=0; d.paidMonth=months; } });
+    ds.filter(d=>d.paidMonth!==null && d.paidMonth<months).forEach(d=>{ pool += d.min; });
+    // extra goes to the target
+    let live = ds.filter(d=>d.balance>0.005);
+    live.sort(method==="snowball" ? (a,b2)=>a.balance-b2.balance : (a,b2)=>b2.apr-a.apr || a.balance-b2.balance);
+    for(const d of live){
+      if(pool<=0) break;
+      const pay = Math.min(d.balance, pool);
+      d.balance -= pay; pool -= pay;
+      if(d.balance<=0.005){ d.balance=0; d.paidMonth=months; }
+    }
+    timeline.push(ds.reduce((s,d)=>s+d.balance,0));
+    if(months>1 && timeline[months-1] >= timeline[months-2] - 0.01) { // making no progress
+      return { months:Infinity, interest:Infinity, order:ds, stuck:true, timeline };
+    }
+  }
+  const order = ds.slice().sort((a,b2)=>(a.paidMonth||999)-(b2.paidMonth||999));
+  return { months, interest, order, stuck:false, timeline };
+}
+function debtSummary(b, plan){
+  const debts = debtList(b);
+  const totalBal = debts.reduce((s,d)=>s+d.balance,0);
+  const totalMin = debts.reduce((s,d)=>s+d.min,0);
+  const wApr = totalBal>0 ? debts.reduce((s,d)=>s+d.apr*d.balance,0)/totalBal : 0;
+  const billsM = (b.expenses||[]).reduce((s,e)=>s+monthlyCost(e),0);
+  const allowM = (+b.allowance||0)*plan.per/12;
+  const savM = (b.goals||[]).filter(g=>g.type==="savings").reduce((s,g)=>s+goalPerCheck(b,g)*plan.per/12,0);
+  const avgLeft = monthlyIncome(b) - billsM - allowM - savM;
+  const goalExtra = (b.goals||[]).filter(g=>g.type==="debt")
+    .reduce((s,g)=>s + goalPerCheck(b,g)*plan.per/12, 0);
+  const auto = Math.max(0, Math.round(avgLeft*0.75) + goalExtra);
+  const extra = b.debtExtra==null ? auto : +b.debtExtra;
+  return { debts, totalBal, totalMin, wApr, extra, auto, avgLeft, goalExtra };
+}
+
+/* ============================================================
+   Evening out the leftovers
+   Splitting every bill isn't the answer: small bills are the app's only
+   flexible levers, and freezing them makes the fit worse. So try splits
+   one at a time and keep only the ones that actually steady the leftovers.
+   ============================================================ */
+function evenness(bb){
+  const p = buildPlan(bb);
+  const L = p.checks.filter(c=>!c.items.some(o=>o.late)).map(c=>c.left);
+  if(!L.length) return { sd:Infinity, lo:0, hi:0 };
+  const m = L.reduce((a,x)=>a+x,0)/L.length;
+  return { sd: Math.sqrt(L.reduce((a,x)=>a+(x-m)*(x-m),0)/L.length),
+           lo: Math.min(...L), hi: Math.max(...L) };
+}
+function evenOut(b){
+  const work = JSON.parse(JSON.stringify(b));
+  const before = evenness(work);
+  let best = before; const changed = [];
+  for(let pass=0; pass<work.expenses.length; pass++){
+    let pick = null;
+    for(const e of work.expenses){
+      if(e.sinking || e.freq==="once") continue;
+      e.sinking = true;
+      const s = evenness(work);
+      e.sinking = false;
+      if(s.sd < best.sd - 1 && (!pick || s.sd < pick.s.sd)) pick = { e, s:s };
+    }
+    if(!pick) break;
+    pick.e.sinking = true; best = pick.s; changed.push(pick.e.name);
+  }
+  return { changed, before, after:best,
+           flags: work.expenses.reduce((m,e)=>{ m[e.id]=!!e.sinking; return m; },{}) };
+}
+
+/* ============================================================
+   Budget analysis — the red flags
+   ============================================================ */
+function analyze(b, plan){
+  const flags = [];
+  const per = plan.per, inc = monthlyIncome(b);
+  const exp = (b.expenses||[]);
+  const sumCat = ids => exp.filter(e=>ids.includes(e.cat)).reduce((s,e)=>s+monthlyCost(e),0);
+  const billsM = exp.reduce((s,e)=>s+monthlyCost(e),0);
+  const allowM = (+b.allowance||0)*per/12;
+  const savingsM = (b.goals||[]).filter(g=>g.type==="savings").reduce((s,g)=>s+goalPerCheck(b,g)*per/12,0);
+  const debtGoalM = (b.goals||[]).filter(g=>g.type==="debt").reduce((s,g)=>s+goalPerCheck(b,g)*per/12,0);
+  const leftM = inc - billsM - allowM - savingsM - debtGoalM;
+  const pct = n => inc>0 ? n/inc*100 : 0;
+  const add = (sev,title,val,why,fix,action) => flags.push({sev,title,val,why,fix,action});
+
+  if(inc<=0){ add("crit","No income entered yet","",
+    "Every number in this app is measured against your take-home pay. Without it there's nothing to plan against.",
+    "Add your net paycheck under Money."); return {flags, score:0, inc, billsM, allowM, savingsM, leftM}; }
+
+  // 1. does it even balance
+  if(leftM < -1) add("crit","You're spending more than you earn", money(leftM)+"/mo",
+    "Bills, allowance and goal contributions add up to "+money(billsM+allowM+savingsM+debtGoalM)+" a month against "+money(inc)+" coming in. This gap gets covered by credit cards or overdrafts.",
+    "Cut "+money(-leftM)+" a month, or stretch a goal timeline to lower the required contribution.");
+  else if(leftM < inc*0.02) add("watch","Almost nothing left after the plan", money(leftM)+"/mo",
+    "You're running at the edge. One unexpected car repair or medical copay puts you into a card.",
+    "Aim to leave at least "+money(inc*0.05)+" a month unassigned as breathing room.");
+  else add("good","Your plan balances", money(leftM)+"/mo spare",
+    "After every bill, your allowance and your goals, there's still money unassigned each month.","");
+
+  // 2. housing
+  const housing = sumCat(["housing"]);
+  if(housing>0){
+    const p = pct(housing);
+    if(p>40) add("crit","Housing is eating your paycheck", Math.round(p)+"% of take-home",
+      "The common guideline is 30% of gross pay on housing. Yours is "+Math.round(p)+"% of take-home, which is well past that in real terms and leaves little room for everything else.",
+      "This usually can't be fixed with discipline. A roommate, a cheaper lease at renewal, or renegotiating is the realistic lever.");
+    else if(p>33) add("watch","Housing is on the high side", Math.round(p)+"% of take-home",
+      "You're above the 30% rule of thumb. It's workable, but it means the rest of your budget has to stay lean.",
+      "Keep other fixed bills below 20% of pay so this stays manageable.");
+    else add("good","Housing is in a healthy range", Math.round(p)+"% of take-home","Comfortably inside the usual 30% guideline.","");
+  } else add("watch","No housing cost entered","",
+    "Rent or mortgage is usually the biggest single line in a budget. If someone else covers it, ignore this.",
+    "Add it under Money so the analysis is accurate.");
+
+  // 3. non-mortgage debt load
+  const debtM = sumCat(["creditcard","loan"]);
+  const carM  = sumCat(["car"]);
+  const dPct = pct(debtM + carM);
+  if(dPct>20) add("crit","Debt payments are too large a share", Math.round(dPct)+"% of take-home",
+    "Lenders start calling this distress territory past 20%. Every dollar here is a dollar that can't go to savings, and the interest keeps the balance sticky.",
+    "See the Debt tab — a focused payoff order will clear this faster than spreading extra money evenly.");
+  else if(dPct>12) add("watch","Debt payments are worth watching", Math.round(dPct)+"% of take-home",
+    "Under 20% is the usual comfort line, but you're close enough that a new loan would tip it.",
+    "Hold off on new financing until this drops under 10%.");
+  else if(debtM+carM>0) add("good","Debt load is manageable", Math.round(dPct)+"% of take-home","Comfortably under the 20% line lenders watch.","");
+
+  // 4. savings rate
+  const sPct = pct(savingsM);
+  if(savingsM<=0) add("crit","You're not saving anything", "0%",
+    "With no savings line, any surprise expense becomes debt by default. This is the single most common reason budgets collapse.",
+    "Start a goal in the Goals tab, even at "+money(Math.max(25, inc*0.02))+" a check. The habit matters more than the amount.");
+  else if(sPct<10) add("watch","Savings rate is light", Math.round(sPct)+"%",
+    "The usual target is 15-20% of pay across emergency fund and retirement. You're at "+Math.round(sPct)+"%.",
+    "Another "+money(Math.max(25, inc*0.15 - savingsM))+" a month would get you to 15%. Stretching a goal's timeline is the painless way to find it.");
+  else if(sPct>=20) add("good","Strong savings rate", Math.round(sPct)+"%","You're at or above the 20% target most planners use.","");
+  else add("good","Decent savings rate", Math.round(sPct)+"%","Above the 10% floor. Pushing toward 20% is the next step.","");
+
+  // 5. emergency fund
+  const hasEF = (b.goals||[]).some(g=>g.type==="savings" && /emerg|rainy|buffer|cushion/i.test(g.name||""));
+  const monthlyNeed = billsM + allowM;
+  if(!hasEF) add("watch","No emergency fund goal","3 months = "+money(monthlyNeed*3),
+    "Before any other savings goal, most guidance says to bank three months of essential spending. Yours would be about "+money(monthlyNeed*3)+".",
+    "Add a savings goal named Emergency fund in the Goals tab.");
+
+  // 6. spending allowance
+  const aPct = pct(allowM);
+  if(allowM<=0) add("watch","No spending allowance set","",
+    "A budget with zero personal spending built in is the kind people abandon in week three. Groceries out, coffee, a haircut all have to come from somewhere.",
+    "Set an allowance per check under Money, even a small one.");
+  else if(aPct>30) add("watch","Allowance is a big slice", Math.round(aPct)+"% of take-home",
+    "Nearly a third of your pay is unassigned spending money. That's fine if it's deliberate, but it's usually where the missing savings went.",
+    "Trimming it by a quarter would free "+money(allowM*0.25)+" a month for goals.");
+
+  // 7. transport
+  const tPct = pct(carM + sumCat(["carcost"]));
+  if(tPct>20) add("watch","Transportation is heavy", Math.round(tPct)+"% of take-home",
+    "Car payment, gas, insurance and repairs together are usually kept under 15% of pay. Vehicles quietly crowd out everything else.",
+    "Worth checking whether the car payment can be refinanced or the vehicle downgraded at trade-in.");
+
+  // 8. subscriptions
+  const subs = sumCat(["subs"]);
+  if(subs > Math.max(100, inc*0.04)) add("watch","Subscriptions add up", money(subs)+"/mo",
+    "That's "+money(subs*12)+" a year on recurring services, and these are the easiest bills to forget you're paying.",
+    "Cancelling half would fund "+money(subs*6)+" toward savings this year.");
+
+  // 9. bill-heavy checks
+  const over = plan.checks.filter(c=>c.left < -1);
+  const worst = plan.checks.reduce((m,c)=> c.load>((m&&m.load)||0)?c:m, null);
+  if(over.length && leftM < -1){
+    add("crit", over.length+(over.length>1?" paychecks run":" paycheck runs")+" out before the next one",
+      Math.round(worst.load*100)+"% on the "+fmtDate(worst.date)+" check",
+      "Because the budget is short overall, no amount of shuffling fixes this. Bills already sit on the latest paycheck that beats their due date.",
+      "The fix has to come from the total, not the timing.");
+  } else if(plan.buffer > 1){
+    add("watch","You need a cushion in checking", money(plan.buffer),
+      "Your budget balances across a month, but bills land monthly and your pay doesn't. Following this plan, your checking balance bottoms out around "+money(-plan.buffer)+" in the next three months before pay catches it up.",
+      "Keep about "+money(Math.ceil(plan.buffer/50)*50)+" in checking as a float, or move one due date to the other half of the month. Entering your real checking balance under Money makes this number accurate.");
+  } else if(worst && worst.load>1.15){
+    add("watch","One check carries much more than the rest", Math.round(worst.load*100)+"% of the "+fmtDate(worst.date)+" check",
+      "It's covered by what's already in checking, but that paycheck is doing far more work than the others.",
+      "Moving one due date into the other half of the month would flatten this out.");
+  } else if(plan.checks.length) {
+    const loads = plan.checks.map(c=>c.load);
+    const hi = Math.max(...loads), spread = hi - Math.min(...loads);
+    if(hi <= 0.85) add("good","Every paycheck has room", Math.round(hi*100)+"% at the busiest",
+      "Even your heaviest check is comfortably covered by its own pay.","");
+    else if(spread <= 0.30) add("good","Your paychecks are evenly loaded", Math.round(spread*100)+" point spread",
+      "No single check carries a disproportionate share, and none of them run dry before the next one lands.","");
+    else add("watch","Bills cluster on some checks", Math.round(spread*100)+" point spread",
+      "The busiest check is at "+Math.round(hi*100)+"% while the lightest sits at "+Math.round(Math.min(...loads)*100)+"%. Due dates are bunched, so the app can only even it out so far.",
+      "Moving one or two due dates to the other half of the month would flatten the difference.");
+  }
+
+  // 9b. one bill hogging a whole check
+  const perCheck = +b.pay.amount || 0;
+  const chunky = exp.filter(e => !e.sinking && (+e.amount||0) > perCheck*0.45
+                   && ["monthly","quarterly","annual","once"].includes(e.freq||"monthly"))
+                   .sort((x,y)=>(+y.amount)-(+x.amount));
+  if(perCheck>0 && chunky.length){
+    const e = chunky[0];
+    const share = Math.round((+e.amount)/perCheck*100);
+    const slices = Math.max(2, Math.round(per/12));
+    const slice = (+e.amount)/slices;
+    add("watch","\""+e.name+"\" swallows a whole paycheck", share+"% of one check",
+      "At "+money(e.amount)+" it takes "+share+"% of whichever check it lands on, so that check has almost nothing left while the next one sits nearly empty. Moving the whole bill between checks can't fix that — it's too big to fit comfortably on either.",
+      "Splitting it sets aside about "+money(slice)+" from each check instead of taking it all from one.",
+      { label:"Split "+e.name+" across checks", act:"splitBill", id:e.id });
+  }
+
+  // 9c. paid-off cards still carrying a payment
+  const cleared = exp.filter(e => isDebtCat(e.cat) && (+e.amount||0) > 0 && (+e.balance||0) <= 0 && e.apr != null);
+  if(cleared.length) add("good", cleared.length>1 ? "Cleared debts still on the plan" : "\""+cleared[0].name+"\" is paid off",
+    money(cleared.reduce((s2,e)=>s2+monthlyCost(e),0))+"/mo freed",
+    (cleared.length>1 ? cleared.map(e=>e.name).join(" and ")+" have" : "It has")+" a zero balance but the payment is still in your bills, so the plan is holding money back for it.",
+    "Delete the bill under Money, or roll that amount into your next debt or savings goal.");
+
+  // 10. high APR
+  const highApr = debtList(b).filter(d=>d.apr>=22);
+  if(highApr.length) add("watch","High interest rate"+(highApr.length>1?"s":""), Math.round(Math.max(...highApr.map(d=>d.apr)))+"% APR",
+    highApr.map(d=>d.name).join(", ")+" charges over 22%. At that rate the balance grows faster than most people can pay it down with minimums alone.",
+    "A credit union personal loan or a balance transfer offer usually cuts this in half.");
+
+  // 11. goal feasibility
+  (b.goals||[]).forEach(g=>{
+    const p = goalPerCheck(b,g);
+    if(p > 0 && leftM < 0)
+      add("watch","\""+g.name+"\" may be too aggressive", money(p)+"/check",
+        "Hitting "+money(g.target)+" in "+g.months+" months needs "+money(p)+" from every check, and the budget doesn't have room for it.",
+        "Stretching it to "+Math.ceil(g.months*1.5)+" months drops the ask to about "+money(p*g.months/(g.months*1.5))+" a check.");
+  });
+
+  // score
+  let score = 100;
+  flags.forEach(f=>{ if(f.sev==="crit") score-=18; else if(f.sev==="watch") score-=7; else score+=2; });
+  score = clamp(Math.round(score), 5, 100);
+  return { flags, score, inc, billsM, allowM, savingsM, debtGoalM, leftM };
+}
+
+/* ============================================================
+   UI shell
+   ============================================================ */
+let TAB = "plan", PLAN = null, openChecks = {};
+const $ = id => document.getElementById(id);
+const TABS = [
+  {id:"plan",  name:"Plan",   icon:'<path d="M3 5h18M3 12h18M3 19h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'},
+  {id:"money", name:"Money",  icon:'<rect x="2.5" y="5.5" width="19" height="13" rx="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" stroke="currentColor" stroke-width="1.7"/>'},
+  {id:"goals", name:"Goals",  icon:'<circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.4" stroke="currentColor" stroke-width="1.7"/>'},
+  {id:"debt",  name:"Debt",   icon:'<path d="M4 18V9M10 18V5M16 18v-6M4 21h17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'},
+  {id:"health",name:"Health", icon:'<path d="M12 20s-7.5-4.6-7.5-9.8A4.4 4.4 0 0 1 12 7a4.4 4.4 0 0 1 7.5 3.2C19.5 15.4 12 20 12 20z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'}
+];
+function renderTabs(){
+  $("tabbar").innerHTML = TABS.map(t=>`<button data-tab="${t.id}" class="${TAB===t.id?'on':''}">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">${t.icon}</svg><span>${t.name}</span></button>`).join("");
+}
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("on"),2300); }
+
+function render(){
+  const b = B();
+  if(!b) return;
+  PLAN = buildPlan(b);
+  if(snapshot(b, PLAN)) save();
+  const a = analyze(b, PLAN);
+  $("budgetName").textContent = b.name;
+  const next = PLAN.checks[0];
+  $("topNext").textContent = next ? fmtDate(next.date) : "Add pay";
+  if(TAB==="debt"){
+    const ds = debtSummary(b, PLAN);
+    $("topLabel").textContent = "Total balance owed";
+    $("topBig").textContent = money(ds.totalBal);
+    $("topSub").innerHTML = ds.totalBal>0 ? `Minimums <b>${money(ds.totalMin)}/mo</b> · Average rate <b>${ds.wApr.toFixed(1)}%</b>` : "No card or loan balances entered";
+  } else {
+    $("topLabel").textContent = "Unassigned each month";
+    $("topBig").textContent = money(a.leftM);
+    $("topBig").style.color = a.leftM<0 ? "#F0A99B" : "#EAF1EB";
+    $("topSub").innerHTML = `Take-home <b>${money(a.inc)}</b> · Bills <b>${money(a.billsM)}</b> · Allowance <b>${money(a.allowM)}</b> · Goals <b>${money(a.savingsM + (a.debtGoalM||0))}</b>`;
+  }
+  renderTabs();
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));
+  $("view-"+TAB).classList.add("on");
+  if(TAB==="plan") renderPlan(b);
+  if(TAB==="money") renderMoney(b);
+  if(TAB==="goals") renderGoals(b);
+  if(TAB==="debt") renderDebt(b);
+  if(TAB==="health") renderHealth(b, a);
+}
+
+/* ---------- Plan ---------- */
+function renderPlan(b){
+  const el = $("view-plan");
+  if(!b.pay.amount){
+    el.innerHTML = `<div class="empty"><h4>Start with your paycheck</h4>
+      <p>Tell the app what you take home and when you get paid. Everything else is built on top of that.</p>
+      <button class="btn" data-act="editPay">Add my pay</button></div>`;
+    return;
+  }
+  if(!b.expenses.length){
+    el.innerHTML = `<div class="empty"><h4>Now add a bill or two</h4>
+      <p>Enter what you owe and when it's due. As soon as there are two bills, the app starts deciding which paycheck each one should come out of.</p>
+      <button class="btn" data-act="addExpense">Add a bill</button></div>`;
+    return;
+  }
+  const cs = PLAN.checks;
+  const maxLoad = Math.max(1, ...cs.map(c=>c.load));
+  const eq = cs.slice(0,13).map((c,i)=>{
+    const h = clamp(c.load/maxLoad*100, 5, 100);
+    const cls = c.dry ? "hot" : c.load > 0.93 ? "warm" : "";
+    return `<button class="eq-col ${cls} ${openChecks[c.id]?'sel':''}" data-eq="${c.id}" aria-label="${fmtLong(c.date)}, ${Math.round(c.load*100)} percent used">
+      <div class="eq-bar" style="height:${h}%"><div class="eq-fill" style="height:100%"></div></div>
+      <small>${c.date.getDate()}</small></button>`;
+  }).join("");
+  const dry = cs.filter(c=>c.dry).length;
+  // ignore checks distorted by bills that were already due before the plan started
+  const clean = cs.filter(c=>!c.items.some(o=>o.late));
+  const lefts = (clean.length?clean:cs).map(c=>c.left);
+  const lo = Math.min(...lefts), hi = Math.max(...lefts);
+  const band = Math.abs(hi-lo) < 25 ? money(lo)+" every check"
+             : money(lo)+" to "+money(hi);
+  el.innerHTML = `
+    <div class="eq-wrap">
+      <div class="eq-head"><h3>What you keep after each check</h3><span class="num">${band}</span></div>
+      <div class="eq">${eq}</div>
+      <div class="eq-legend"><span><i style="background:var(--pine)"></i>covered</span><span><i style="background:var(--amber)"></i>tight</span><span><i style="background:var(--clay)"></i>over</span></div>
+    </div>
+    ${(()=>{ const p = pendingCheckin(b); return p ? `<button class="add" data-act="checkin" style="color:var(--pine)">Payday check-in for ${fmtDate(D(p.snap.date))}</button>` : ""; })()}
+    ${(()=>{ const ks = Object.keys(b.log||{}); if(!ks.length) return "";
+        const last = b.log[ks.sort((x,y)=> (b.log[x].at<b.log[y].at?-1:1))[ks.length-1]];
+        if(last.drift == null || Math.abs(last.drift) < 20) return "";
+        return `<p class="sec-note" style="margin:10px 2px 0">Last check-in: ${money(Math.abs(last.drift))} ${last.drift<0?"behind":"ahead of"} plan. The plan now starts from your real balance.</p>`; })()}
+    ${cs.length>2 && b.expenses.length>1 ? `<button class="add" data-act="evenOut">Even out what's left each check</button>` : ""}
+    ${PLAN.buffer>1?`<div class="flag watch" style="margin-top:12px"><h4><span>Keep a cushion in checking</span><em>${money(PLAN.buffer)}</em></h4>
+      <p>Bills fall monthly, your pay doesn't, so some checks carry more than they earn${dry?" ("+dry+" of them above)":""}. Over the next three months the balance bottoms out ${money(PLAN.buffer)} below zero. Keeping that much parked in checking is what makes the plan work.</p></div>`:""}
+    ${PLAN.unfunded.length ? `<div class="flag crit" style="margin-top:12px"><h4>Due before your next paycheck</h4>
+      <p>${PLAN.unfunded.map(o=>esc(o.name)+" on "+fmtDate(o.due)).join(", ")} ${PLAN.unfunded.length>1?"fall":"falls"} due before ${fmtDate(cs[0].date)}, so ${PLAN.unfunded.length>1?"they're":"it's"} sitting on your next check. If you already covered ${PLAN.unfunded.length>1?"them":"it"} from your last paycheck, clear ${PLAN.unfunded.length>1?"them":"it"} out — the first check reads wrong until you do.</p>
+      <button class="btn ghost" style="margin-top:11px" data-act="clearPastDue">I already paid ${PLAN.unfunded.length>1?"these":"this"}</button></div>`:""}
+    ${cs.map(c=>checkCard(b,c)).join("")}
+    <p class="sec-note" style="margin-top:18px">Bills move to the latest paycheck that still lands before their due date, then shift earlier when a check gets crowded. Tap any bill to pin it, mark it paid, or move it yourself.</p>`;
+}
+function checkCard(b,c){
+  const segs = [];
+  const w = v => c.income>0 ? Math.min(100, v/c.income*100) : 0;
+  if(c.bills-c.debtBills>0) segs.push(`<span class="s-bill" style="width:${w(c.bills-c.debtBills)}%"></span>`);
+  if(c.debtBills>0) segs.push(`<span class="s-debt" style="width:${w(c.debtBills)}%"></span>`);
+  if(c.goalTotal+c.sinkTotal>0) segs.push(`<span class="s-goal" style="width:${w(c.goalTotal+c.sinkTotal)}%"></span>`);
+  if(c.allowance>0) segs.push(`<span class="s-allow" style="width:${w(c.allowance)}%"></span>`);
+  if(c.left<0) segs.push(`<span class="s-over" style="width:${Math.min(100,-c.left/c.income*100)}%"></span>`);
+  const open = openChecks[c.id];
+  const days = dayDiff(today(), c.date);
+  const when = days===0 ? "Today" : days<0 ? Math.abs(days)+" days ago" : days<14 ? "In "+days+" days" : fmtMY(c.date);
+  const rows = [];
+  c.items.forEach(o=>{
+    const paid = b.paid && b.paid[o.key];
+    const tags = [];
+    if(o.movedEarly) tags.push('<span class="pill moved">moved early</span>');
+    if(o.pinned) tags.push('<span class="pill pin">pinned</span>');
+    if(o.late) tags.push('<span class="pill late">past due</span>');
+    rows.push(`<button class="item ${paid?'done':''}" data-item="${o.key}" data-check="${c.id}">
+      <span class="tick ${paid?'done':''}"><svg width="11" height="9" viewBox="0 0 11 9"><path d="M1 4.6L4 7.5 10 1.3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="item-main"><span class="item-name">${esc(o.name)}</span>
+        <span class="item-sub"><i style="width:7px;height:7px;border-radius:2px;background:${catOf(o.cat).color};display:inline-block"></i>due ${fmtDate(o.due)} ${tags.join(" ")}</span></span>
+      <span class="item-amt">${money(o.amount)}</span></button>`);
+  });
+  c.sinking.forEach(s=>{
+    rows.push(`<div class="item"><span class="tick" style="border-style:dashed"></span>
+      <span class="item-main"><span class="item-name">${esc(s.name)} — set aside</span>
+      <span class="item-sub">banked toward the ${fmtDate(s.due)} payment</span></span>
+      <span class="item-amt">${money(s.amount)}</span></div>`);
+  });
+  (c.goals||[]).forEach(g=>{ if(g.per<=0) return;
+    const gk = goalKey(g.id, c.id), gdone = !!paidRec(b, gk);
+    rows.push(`<button class="item ${gdone?'done':''}" data-goaltick="${g.id}" data-check="${c.id}" data-amt="${g.per}">
+      <span class="tick ${gdone?'done':''}" style="${gdone?'border-color:var(--violet);background:var(--violet)':'border-color:var(--violet)'}">
+        <svg width="11" height="9" viewBox="0 0 11 9"><path d="M1 4.6L4 7.5 10 1.3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="item-main"><span class="item-name">${esc(g.name)}</span><span class="item-sub">${g.type==="debt"?"extra toward debt":"into savings"}${gdone?" · added":""}</span></span>
+      <span class="item-amt">${money(g.per)}</span></button>`);
+  });
+  if(c.allowance>0) rows.push(`<div class="item"><span class="tick" style="border-color:var(--steel);background:var(--steel);color:#fff">
+    <svg width="11" height="9" viewBox="0 0 11 9"><circle cx="5.5" cy="4.5" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span>
+    <span class="item-main"><span class="item-name">Spending allowance</span><span class="item-sub">yours to use however you want</span></span>
+    <span class="item-amt">${money(c.allowance)}</span></div>`);
+  return `<article class="check ${open?'open':''} ${c.date<today()?'past':''}" id="chk-${c.id}">
+    <button class="check-head" data-check-toggle="${c.id}">
+      <span><span class="check-when">${when}</span><span class="check-date">${fmtLong(c.date)}</span></span>
+      <span style="display:flex;align-items:center;gap:10px">
+        <span class="check-amt"><span class="in">${money(c.income)} in</span>
+          <span class="left ${c.left<0?'neg':''}">${money(c.left)} ${c.left<0?"short":"left"}</span></span>
+        <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M1.5 1.5L6.5 6.5l-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </span>
+    </button>
+    <div class="bar">${segs.join("")}</div>
+    <div class="check-meta">
+      <span>Bills <b>${money(c.bills)}</b></span>
+      ${c.sinkTotal>0?`<span>Set aside <b>${money(c.sinkTotal)}</b></span>`:""}
+      ${c.goalTotal>0?`<span>Goals <b>${money(c.goalTotal)}</b></span>`:""}
+      ${c.allowance>0?`<span>Allowance <b>${money(c.allowance)}</b></span>`:""}
+      <span>${Math.round(c.load*100)}% of this check</span>
+    </div>
+    <div class="check-body">${rows.length?rows.join(""):'<div class="empty-check">Nothing due from this check.</div>'}</div>
+  </article>`;
+}
+
+/* ---------- Money ---------- */
+function renderMoney(b){
+  const per = payPerYear(b);
+  const byCat = {};
+  b.expenses.forEach(e=>{ (byCat[e.cat] = byCat[e.cat]||[]).push(e); });
+  const order = CATS.map(c=>c.id).filter(id=>byCat[id]);
+  const list = order.map(cid=>{
+    const c = catOf(cid);
+    const tot = byCat[cid].reduce((s,e)=>s+monthlyCost(e),0);
+    return `<h2 class="sec" style="font-size:15px;font-family:var(--sans);font-weight:600;display:flex;justify-content:space-between;align-items:baseline">
+        <span>${c.name}</span><span class="num" style="font-size:14px;color:var(--ink3)">${money(tot)}/mo</span></h2>
+      <div class="card">${byCat[cid].map(e=>expenseRow(b,e)).join("")}</div>`;
+  }).join("");
+  $("view-money").innerHTML = `
+    <h2 class="sec">Income</h2>
+    <p class="sec-note">Use your take-home pay, after taxes and deductions.</p>
+    <div class="card">
+      <button class="row" data-act="editPay">
+        <span class="swatch" style="background:var(--pine)"></span>
+        <span class="row-main"><span class="row-title">${b.pay.amount?money2(b.pay.amount):"Set your paycheck"}</span>
+          <span class="row-sub">${(PAYF.find(f=>f.id===b.pay.freq)||{}).name} · next on ${b.pay.next?fmtDate(D(b.pay.next)):"—"}</span></span>
+        <span class="row-amt">${money(monthlyIncome(b))}<small>per month</small></span>
+      </button>
+      <button class="row" data-act="editPay">
+        <span class="swatch" style="background:var(--line)"></span>
+        <span class="row-main"><span class="row-title">${money2(b.startBalance||0)} in checking</span>
+          <span class="row-sub">your starting cushion between paydays</span></span></button>
+      ${(b.extras||[]).map(x=>`<button class="row" data-act="editExtra" data-id="${x.id}">
+        <span class="swatch" style="background:var(--steel)"></span>
+        <span class="row-main"><span class="row-title">${esc(x.label)}</span><span class="row-sub">one time · ${fmtDate(D(x.date))}</span></span>
+        <span class="row-amt">${money(x.amount)}</span></button>`).join("")}
+    </div>
+    <button class="add" data-act="addExtra">+ Add extra income</button>
+
+    <h2 class="sec">Spending allowance</h2>
+    <p class="sec-note">Money you keep back from every check for groceries out, gas, whatever comes up. It's reserved before the plan decides anything else.</p>
+    <div class="card"><div class="row" style="display:block">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="row-title">Per paycheck</span>
+        <span class="num" style="font-size:22px" id="allowVal">${money(b.allowance||0)}</span></div>
+      <input type="range" id="allowRange" min="0" max="${Math.max(200, Math.round((b.pay.amount||400)*0.6/10)*10)}" step="10" value="${b.allowance||0}">
+      <div class="row-sub" style="display:flex;justify-content:space-between"><span>$0</span><span>${money(monthlyIncome(b)? (b.allowance||0)*per/12 : 0)} a month</span></div>
+    </div></div>
+
+    <h2 class="sec">Bills and expenses</h2>
+    <p class="sec-note">${b.expenses.length? b.expenses.length+" entries · "+money(b.expenses.reduce((s,e)=>s+monthlyCost(e),0))+" a month" : "Nothing here yet. Add rent first, then work down."}</p>
+    ${list || `<div class="empty"><h4>No bills yet</h4><p>Add your fixed bills with their due dates. The plan builds itself from there.</p><button class="btn" data-act="addExpense">Add a bill</button></div>`}
+    ${b.expenses.length? `<button class="add" data-act="addExpense">+ Add a bill</button>`:""}
+
+    <div class="toggle"><span class="toggle-txt">Carry leftovers forward<small>Money left on one check rolls into the next instead of vanishing</small></span>
+      <button class="sw ${b.rollover?'on':''}" data-act="toggleRollover" aria-pressed="${!!b.rollover}"></button></div>
+    <label class="f"><span>Plan this many months ahead</span>
+      <select id="horizonSel">${[3,6,9,12,18,24].map(m=>`<option value="${m}" ${b.horizon===m?"selected":""}>${m} months</option>`).join("")}</select></label>
+    <div style="height:10px"></div>`;
+}
+function expenseRow(b,e){
+  const c = catOf(e.cat);
+  const f = FREQS.find(x=>x.id===(e.freq||"monthly"));
+  let when = f.name;
+  if(e.freq==="monthly") when = "Due the "+ordinal(e.dueDay||1);
+  else if(e.dueDate) when = f.name+" · next "+fmtDate(D(e.dueDate));
+  const tags = [];
+  if(e.sinking) tags.push("split across checks");
+  if(e.autopay) tags.push("autopay, can't move");
+  if(e.cat==="creditcard"||e.cat==="loan") if(e.balance) tags.push(money(e.balance)+" owed at "+(e.apr||0)+"%");
+  return `<button class="row" data-act="editExpense" data-id="${e.id}">
+    <span class="swatch" style="background:${c.color}"></span>
+    <span class="row-main"><span class="row-title">${esc(e.name)}</span>
+      <span class="row-sub">${when}${tags.length?" · "+tags.join(" · "):""}</span></span>
+    <span class="row-amt">${money2(e.amount||0)}${f.perYear!==12?`<small>${money(monthlyCost(e))}/mo</small>`:""}</span></button>`;
+}
+const ordinal = n => n + (["th","st","nd","rd"][(n%100-20)%10] || ["th","st","nd","rd"][n%100] || "th");
+
+/* ---------- Goals ---------- */
+function renderGoals(b){
+  const per = payPerYear(b);
+  const sav = (b.goals||[]).filter(g=>g.type==="savings");
+  const dbt = (b.goals||[]).filter(g=>g.type==="debt");
+  const card = g => {
+    const p = goalPerCheck(b,g);
+    const done = g.type==="savings" ? clamp((+g.saved||0)/Math.max(1,+g.target||1)*100,0,100) : 0;
+    const end = goalEnd(b,g);
+    const met = g.type==="savings" && (+g.saved||0) >= (+g.target||0) && (+g.target||0) > 0;
+    const left = goalMonthsLeft(b,g);
+    return `<button class="goal" data-act="editGoal" data-id="${g.id}" style="display:block;width:100%;text-align:left">
+      <span class="goal-top"><span><span class="goal-name">${esc(g.name)}</span>
+        <span class="goal-when">${money(g.target)} by ${fmtMY(end)} · ${met?"reached":left+" month"+(left===1?"":"s")+" to go"}${g.type==="debt"&&g.apr?" · "+g.apr+"% APR":""}</span></span>
+        <span class="goal-per"><b>${met?"Done":money(p)}</b><small>${met?"target met":"per check"}</small></span></span>
+      ${g.type==="savings"?`<span class="track"><span style="width:${done}%;background:var(--violet)"></span></span>
+        <span class="goal-foot"><span>${money(g.saved||0)} saved</span><span>${money(Math.max(0,(g.target||0)-(g.saved||0)))} to go</span></span>`
+        :`<span class="track"><span style="width:100%;background:var(--clay);opacity:.35"></span></span>
+        <span class="goal-foot"><span>${money(p*per/12)} a month</span><span>flows into your Debt plan</span></span>`}
+    </button>`;
+  };
+  const totalPer = (b.goals||[]).reduce((s,g)=>s+goalPerCheck(b,g),0);
+  $("view-goals").innerHTML = `
+    ${(b.goals||[]).length?`<div class="card" style="padding:15px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:14px;font-weight:600">Coming out of every check</span>
+        <span class="num" style="font-size:22px">${money(totalPer)}</span></div>
+      <div class="row-sub" style="margin-top:3px">${money(totalPer*per/12)} a month across ${(b.goals||[]).length} goal${(b.goals||[]).length>1?"s":""} — already reflected in your Plan tab.</div>
+    </div>`:""}
+    <h2 class="sec">Savings goals</h2>
+    <p class="sec-note">Name it, set the amount and the deadline. The app works out what each paycheck has to contribute.</p>
+    ${sav.length? sav.map(card).join("") : `<div class="empty"><h4>No savings goals yet</h4><p>An emergency fund is the usual first one: three months of essential spending.</p><button class="btn" data-act="addGoal" data-type="savings">Add a savings goal</button></div>`}
+    ${sav.length?`<button class="add" data-act="addGoal" data-type="savings">+ Add a savings goal</button>`:""}
+    <h2 class="sec">Debt payoff goals</h2>
+    <p class="sec-note">Set a balance you want gone by a date. The contribution becomes extra money on top of minimums in your Debt plan.</p>
+    ${dbt.length? dbt.map(card).join("") : `<div class="empty"><h4>No payoff goals yet</h4><p>Pick a card or loan and give it a deadline.</p><button class="btn" data-act="addGoal" data-type="debt">Add a payoff goal</button></div>`}
+    ${dbt.length?`<button class="add" data-act="addGoal" data-type="debt">+ Add a payoff goal</button>`:""}
+    <div style="height:10px"></div>`;
+}
+
+/* ---------- Debt ---------- */
+function renderDebt(b){
+  const s = debtSummary(b, PLAN);
+  if(!s.debts.length){
+    $("view-debt").innerHTML = `<div class="empty"><h4>No debt entered</h4>
+      <p>Add a bill and choose the category Credit card debt or Loan payment. Include the balance and rate, and the payoff plan builds itself here.</p>
+      <button class="btn" data-act="addExpense" data-cat="creditcard">Add a card or loan</button></div>`;
+    return;
+  }
+  const snow = simulate(s.debts, s.extra, "snowball");
+  const aval = simulate(s.debts, s.extra, "avalanche");
+  const both = [snow, aval];
+  const valid = both.every(r=>!r.stuck && isFinite(r.months));
+  let rec = "avalanche", why = "";
+  if(valid){
+    const saves = snow.interest - aval.interest;
+    const faster = snow.months - aval.months;
+    if(saves < 50 && faster <= 1){ rec="snowball"; why = `Avalanche only saves ${money(saves)} here, which isn't worth much. Snowball clears your smallest balance first, and that early win is what keeps people going.`; }
+    else { rec="avalanche"; why = `Avalanche saves ${money(saves)} in interest${faster>0?` and finishes ${faster} month${faster>1?"s":""} sooner`:""}. With a gap that size, take the math.`; }
+  }
+  const R = rec==="avalanche" ? aval : snow;
+  const O = rec==="avalanche" ? snow : aval;
+  const target = R.order.find(d=>d.paidMonth) || R.order[0];
+  const payoffDate = m => fmtMY(addMonths(today(), m));
+  const strat = (name, res, isRec) => `<div class="card" style="padding:15px 16px;${isRec?'box-shadow:var(--shadow),0 0 0 2px var(--pine)':''}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-weight:600;font-size:15px">${name}${isRec?' <span class="pill" style="background:var(--pine-soft);color:var(--pine)">recommended</span>':''}</span>
+        <span class="num" style="font-size:20px">${isFinite(res.months)?res.months+" mo":"—"}</span></div>
+      <div class="row-sub" style="margin-top:4px">${isFinite(res.months)?`Debt-free ${payoffDate(res.months)} · ${money(res.interest)} total interest`:"Minimum payments don't cover the interest at this rate"}</div>
+      <div class="row-sub" style="margin-top:6px;color:var(--ink2)">${name==="Avalanche"?"Highest interest rate first":"Smallest balance first"}</div>
+    </div>`;
+  $("view-debt").innerHTML = `
+    <div class="card" style="padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+        <span style="font-weight:600;font-size:15px">Extra you can put toward debt</span>
+        <span class="num" style="font-size:22px" id="extraVal">${money(s.extra)}</span></div>
+      <div class="row-sub">On top of ${money(s.totalMin)} in minimums. Your plan leaves about ${money(s.avgLeft)} a month unassigned${s.goalExtra>0?`, plus ${money(s.goalExtra)} from your payoff goals`:""}.</div>
+      <input type="range" id="extraRange" min="0" max="${Math.max(200, Math.round((s.avgLeft+s.goalExtra+200)/50)*50)}" step="10" value="${Math.round(s.extra)}">
+      <button class="row-sub" data-act="resetExtra" style="color:var(--pine);font-weight:600;padding:2px 0">Reset to what the budget allows</button>
+    </div>
+    <h2 class="sec">Two ways to do it</h2>
+    <p class="sec-note">Same money, different order. Here's what each costs you.</p>
+    ${strat("Avalanche", aval, valid && rec==="avalanche")}
+    ${strat("Snowball", snow, valid && rec==="snowball")}
+    ${valid?`<div class="flag good" style="margin-top:12px"><h4>Why ${rec}</h4><p>${why}</p></div>`
+      :`<div class="flag crit" style="margin-top:12px"><h4>The minimums aren't enough</h4>
+        <p>At ${money(s.extra)} extra a month, interest is growing as fast as you're paying. The balance never clears.</p>
+        <p class="fix">Freeing up even ${money(50)} more a month changes this. Check the Health tab for where it could come from.</p></div>`}
+    ${valid?`<h2 class="sec">Your payoff order</h2>
+    <p class="sec-note">Pay minimums on everything. Every spare dollar goes to the top one until it's gone, then rolls down.</p>
+    <div class="card">${R.order.map((d,i)=>`<div class="row">
+        <span class="swatch" style="background:${i===0?'var(--clay)':'var(--line)'}"></span>
+        <span class="row-main"><span class="row-title">${i+1}. ${esc(d.name)}</span>
+          <span class="row-sub">${money(debtList(b).find(x=>x.id===d.id).balance)} at ${d.apr}% · minimum ${money(d.min)}</span></span>
+        <span class="row-amt">${d.paidMonth?payoffDate(d.paidMonth):"—"}<small>paid off</small></span></div>`).join("")}</div>
+    <div class="flag good" style="margin-top:12px"><h4>Focus here first<em>${money(s.extra + (R.order[0]?R.order[0].min:0))}/mo</em></h4>
+      <p>Send ${money(s.extra)} extra to ${esc(R.order[0].name)} on top of its ${money(R.order[0].min)} minimum. It clears ${R.order[0].paidMonth?"in "+R.order[0].paidMonth+" month"+(R.order[0].paidMonth>1?"s":""):"first"}, and its payment then rolls onto the next one.</p></div>
+    ${(()=>{ const di = O.interest-R.interest, dm = O.months-R.months, other = rec==="avalanche"?"snowball":"avalanche";
+      const timing = dm===0 ? "finishes the same month" : `finishes ${Math.abs(dm)} month${Math.abs(dm)===1?"":"s"} ${dm>0?"later":"sooner"}`;
+      const cost = Math.abs(di) < 1 ? "costs the same in interest" : `${di>0?"costs":"saves"} ${money(Math.abs(di))} in interest`;
+      return `<div class="flag watch" style="margin-top:11px"><h4><span>If you went the other way</span><em>${money(Math.abs(di))}</em></h4>
+        <p>Switching to ${other} ${cost} and ${timing}. ${di<-1?"The math favours it, but only just — pick whichever order you'll actually stick to.":"Not worth it here."}</p></div>`; })()}`:""}
+    <p class="sec-note" style="margin-top:18px">Balances here don't update on their own. Edit the card under Money when you pay it down so the projection stays honest.</p>`;
+}
+
+/* ---------- Health ---------- */
+function renderHealth(b, a){
+  const order = {crit:0, watch:1, good:2};
+  const flags = a.flags.slice().sort((x,y)=>order[x.sev]-order[y.sev]);
+  const crit = flags.filter(f=>f.sev==="crit").length;
+  const C = 2*Math.PI*32;
+  const verdict = a.score>=80 ? "This budget holds up well." : a.score>=60 ? "Workable, with a few things to tighten." : a.score>=40 ? "Some real strain in here." : "This plan needs structural changes, not discipline.";
+  const others = store.budgets.filter(x=>x.id!==b.id);
+  $("view-health").innerHTML = `
+    <div class="score">
+      <div class="dial"><svg width="78" height="78" viewBox="0 0 78 78">
+        <circle cx="39" cy="39" r="32" fill="none" stroke="var(--paper)" stroke-width="8"/>
+        <circle cx="39" cy="39" r="32" fill="none" stroke="${a.score>=70?'var(--pine)':a.score>=45?'var(--amber)':'var(--clay)'}" stroke-width="8"
+          stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-a.score/100)}"/></svg><b>${a.score}</b></div>
+      <div class="score-txt"><h3>${verdict}</h3>
+        <p>${crit?crit+" thing"+(crit>1?"s":"")+" needs attention":"Nothing urgent"} · ${flags.filter(f=>f.sev==="watch").length} to watch</p></div>
+    </div>
+    <h2 class="sec">What stands out</h2>
+    <p class="sec-note">Measured against the rules of thumb planners use. They're guidelines, not verdicts on your life.</p>
+    ${flags.map(f=>`<div class="flag ${f.sev}">
+      <h4><span>${f.title}</span>${f.val?`<em>${f.val}</em>`:""}</h4>
+      <p>${f.why}</p>${f.fix?`<p class="fix">${f.fix}</p>`:""}
+      ${f.action?`<button class="btn ghost" style="margin-top:11px" data-act="${f.action.act}" data-id="${f.action.id}">${esc(f.action.label)}</button>`:""}</div>`).join("")}
+    <h2 class="sec">Where the money goes</h2>
+    <div class="card" style="padding:16px">${spendBars(b, a)}</div>
+    ${others.length?`<h2 class="sec">Compare budgets</h2>
+      <p class="sec-note">Side by side against your other scenarios.</p>${compareTable(b, others)}`:
+      `<h2 class="sec">Compare budgets</h2><p class="sec-note">Make a second budget from the menu at the top to test a different set of goals against this one.</p>`}
+    <div style="height:10px"></div>`;
+}
+function spendBars(b, a){
+  const groups = {};
+  b.expenses.forEach(e=>{ const g = catOf(e.cat); groups[g.id] = (groups[g.id]||0) + monthlyCost(e); });
+  const rows = Object.entries(groups).sort((x,y)=>y[1]-x[1]);
+  if(a.allowM>0) rows.push(["_allow", a.allowM]);
+  if(a.savingsM>0) rows.push(["_save", a.savingsM]);
+  if(a.leftM>0) rows.push(["_left", a.leftM]);
+  const max = Math.max(...rows.map(r=>r[1]), 1);
+  const label = id => id==="_allow"?"Spending allowance": id==="_save"?"Savings goals": id==="_left"?"Unassigned": catOf(id).name;
+  const color = id => id==="_allow"?"var(--steel)": id==="_save"?"var(--violet)": id==="_left"?"var(--line)": catOf(id).color;
+  return rows.map(([id,v])=>`<div style="margin-bottom:11px">
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+      <span>${label(id)}</span><span class="num">${money(v)}<span style="color:var(--ink3);font-size:11px"> · ${Math.round(a.inc?v/a.inc*100:0)}%</span></span></div>
+    <div class="track" style="margin:0"><span style="width:${v/max*100}%;background:${color(id)}"></span></div></div>`).join("");
+}
+function compareTable(b, others){
+  const rows = [b, ...others].map(x=>{
+    const p = buildPlan(x), an = analyze(x, p);
+    const ds = debtSummary(x, p);
+    const sim = ds.debts.length ? simulate(ds.debts, ds.extra, "avalanche") : null;
+    return { name:x.name, an, p, sim, ds };
+  });
+  const cell = (fn) => rows.map(r=>`<td>${fn(r)}</td>`).join("");
+  return `<div style="overflow-x:auto"><table class="cmp">
+    <thead><tr><th>Scenario</th>${rows.map(r=>`<th>${esc(r.name)}</th>`).join("")}</tr></thead>
+    <tbody>
+      <tr><td>Health score</td>${cell(r=>r.an.score)}</tr>
+      <tr><td>Unassigned / month</td>${cell(r=>money(r.an.leftM))}</tr>
+      <tr><td>Saving / month</td>${cell(r=>money(r.an.savingsM))}</tr>
+      <tr><td>Savings rate</td>${cell(r=>(r.an.inc?Math.round(r.an.savingsM/r.an.inc*100):0)+"%")}</tr>
+      <tr><td>Allowance / month</td>${cell(r=>money(r.an.allowM))}</tr>
+      <tr><td>Debt-free in</td>${cell(r=>r.sim&&isFinite(r.sim.months)?r.sim.months+" mo":"—")}</tr>
+      <tr><td>Interest paid</td>${cell(r=>r.sim&&isFinite(r.sim.interest)?money(r.sim.interest):"—")}</tr>
+      <tr><td>Tightest check</td>${cell(r=>r.p.checks.length?Math.round(Math.max(...r.p.checks.map(c=>c.load))*100)+"%":"—")}</tr>
+      <tr><td>Red flags</td>${cell(r=>r.an.flags.filter(f=>f.sev==="crit").length)}</tr>
+    </tbody></table></div>`;
+}
+
+/* ============================================================
+   The ledger: making a tick actually move a balance
+   ============================================================ */
+function paidRec(b, key){
+  const r = b.paid && b.paid[key];
+  if(!r) return null;
+  return r === true ? { on:true, delta:0, amount:0 } : r;
+}
+const isDebtCat = c => c==="creditcard" || c==="loan";
+
+// Interest accrued on a card between one payment and the next. A $95 payment on
+// $4,200 at 25% moves the balance about $8, and the app should say so.
+function accrued(e){
+  const f = FREQS.find(x=>x.id===(e.freq||"monthly")) || FREQS[0];
+  const months = f.perYear > 0 ? 12/f.perYear : 1;
+  return (+e.balance||0) * (+e.apr||0)/100/12 * months;
+}
+function setPaid(b, occ, on, actualBalance){
+  b.paid = b.paid || {};
+  const e = b.expenses.find(x=>x.id===occ.eid);
+  if(on){
+    if(b.paid[occ.key]) return paidRec(b, occ.key);
+    let delta = 0, interest = 0;
+    if(e && isDebtCat(e.cat) && (+e.balance||0) > 0){
+      interest = accrued(e);
+      const before = +e.balance||0;
+      // round first, then take the delta from the rounded figure, so unticking
+      // restores the balance to the cent instead of drifting
+      const after = Math.round(Math.max(0, (actualBalance != null && actualBalance !== "")
+        ? +actualBalance
+        : before + interest - (+occ.amount||0)) * 100) / 100;
+      delta = Math.round((after - before)*100)/100;
+      e.balance = after;
+    }
+    b.paid[occ.key] = { on:true, delta, interest, eid:occ.eid, amount:+occ.amount||0, at:iso(today()) };
+    return b.paid[occ.key];
+  }
+  const r = paidRec(b, occ.key);
+  if(r && r.delta && e) e.balance = Math.max(0, Math.round(((+e.balance||0) - r.delta)*100)/100);
+  if(b.paid) delete b.paid[occ.key];
+  return null;
+}
+const goalKey = (gid, checkId) => "goal:" + gid + "@" + checkId;
+function setGoalPaid(b, gid, checkId, amount, on){
+  b.paid = b.paid || {};
+  const key = goalKey(gid, checkId);
+  const g = (b.goals||[]).find(x=>x.id===gid);
+  if(!g) return;
+  if(on){
+    if(b.paid[key]) return;
+    if(g.type==="savings") g.saved = Math.round(((+g.saved||0) + (+amount||0))*100)/100;
+    b.paid[key] = { on:true, goal:gid, amount:+amount||0, at:iso(today()) };
+  } else {
+    const r = paidRec(b, key);
+    if(r && g.type==="savings") g.saved = Math.max(0, Math.round(((+g.saved||0) - (+r.amount||0))*100)/100);
+    delete b.paid[key];
+  }
+}
+
+/* ---------- snapshots ----------
+   What a paycheck was planned to cover, frozen at the time. Without this a
+   check-in two days late would have nothing to check in against, because the
+   plan only ever generates bills from today forward. */
+function snapshot(b, plan){
+  if(!plan.checks.length) return;
+  b.snaps = b.snaps || {}; b.log = b.log || {};
+  let dirty = false;
+  plan.checks.slice(0,2).forEach(c=>{
+    if(b.log[c.id]) return;                       // already confirmed, leave it alone
+    const snap = {
+      date: iso(c.date), income: c.income, allowance: c.allowance,
+      items: c.items.map(o=>({ key:o.key, eid:o.eid, name:o.name, cat:o.cat, amount:o.amount, due:iso(o.due) })),
+      goals: (c.goals||[]).filter(g=>g.per>0).map(g=>({ id:g.id, name:g.name, type:g.type, amount:g.per })),
+      sink: c.sinking.map(x=>({ name:x.name, amount:x.amount })),
+      expected: c.left
+    };
+    if(JSON.stringify(b.snaps[c.id]) !== JSON.stringify(snap)){ b.snaps[c.id] = snap; dirty = true; }
+  });
+  // don't let old snapshots pile up forever
+  const cut = iso(addMonths(today(), -8));
+  Object.keys(b.snaps).forEach(k=>{ if(b.snaps[k].date < cut){ delete b.snaps[k]; dirty = true; } });
+  return dirty;
+}
+function pendingCheckin(b){
+  if(!b.snaps) return null;
+  const t = iso(today());
+  const due = Object.keys(b.snaps)
+    .filter(k => b.snaps[k].date <= t && !(b.log||{})[k])
+    .sort((a,c)=> b.snaps[a].date < b.snaps[c].date ? -1 : 1);
+  return due.length ? { id:due[0], snap:b.snaps[due[0]] } : null;
+}
+
+/* ---------- the check-in screen ---------- */
+let CI = null;
+function openCheckin(id){
+  const b = B();
+  const snap = (b.snaps||{})[id];
+  if(!snap) return;
+  CI = { id, snap, ticks:{}, balances:{} };
+  snap.items.forEach(o=>{ CI.ticks[o.key] = !paidRec(b, o.key) ? true : true; });
+  snap.goals.forEach(g=>{ CI.ticks[goalKey(g.id, id)] = true; });
+  drawCheckin();
+}
+function drawCheckin(){
+  const b = B(), s = CI.snap;
+  const row = (key, name, sub, amount, extra) => `
+    <button class="item" data-ci="${key}">
+      <span class="tick ${CI.ticks[key]?'done':''}"><svg width="11" height="9" viewBox="0 0 11 9"><path d="M1 4.6L4 7.5 10 1.3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="item-main"><span class="item-name">${esc(name)}</span>
+        <span class="item-sub">${sub}</span></span>
+      <span class="item-amt">${money(amount)}</span></button>${extra||""}`;
+  const bills = s.items.map(o=>{
+    const e = b.expenses.find(x=>x.id===o.eid);
+    let sub = "was due " + fmtDate(D(o.due));
+    let extra = "";
+    if(e && isDebtCat(e.cat) && (+e.balance||0) > 0 && CI.ticks[o.key]){
+      const int = accrued(e);
+      const proj = Math.max(0, (+e.balance||0) + int - o.amount);
+      sub = money(int)+" of this is interest";
+      extra = `<div style="padding:0 16px 13px 48px">
+        <div class="row-sub" style="margin-bottom:6px">Balance ${money(e.balance)} → <b>${money(proj)}</b> after this payment.</div>
+        <div class="money-in"><input type="number" inputmode="decimal" id="ci-bal-${o.eid}" step="0.01"
+          value="${CI.balances[o.eid]!=null?CI.balances[o.eid]:""}" placeholder="or type the real balance"></div></div>`;
+    }
+    return row(o.key, o.name, sub, o.amount, extra);
+  }).join("");
+  const goals = s.goals.map(g=>row(goalKey(g.id, CI.id), g.name,
+    g.type==="savings" ? "into savings" : "extra toward debt", g.amount)).join("");
+  const sink = s.sink.length ? `<div class="row"><span class="row-main">
+      <span class="row-title">${s.sink.map(x=>esc(x.name)).join(", ")} set aside</span>
+      <span class="row-sub">stays in checking until it's due</span></span>
+      <span class="row-amt">${money(s.sink.reduce((a,x)=>a+x.amount,0))}</span></div>` : "";
+  $("obRoot").innerHTML = `<div class="ob"><div class="ob-in">
+    <div class="ob-bar"><span style="width:100%"></span></div>
+    <div class="ob-body">
+      <div class="ob-step">Payday check-in</div>
+      <h1>${fmtLong(D(s.date))}</h1>
+      <p>Here's what this paycheck was set to cover. Untick anything that didn't happen, then confirm.</p>
+      <h2 class="sec" style="font-size:15px;font-family:var(--sans)">Bills</h2>
+      <div class="card">${bills || '<div class="empty-check">Nothing was due from this check.</div>'}</div>
+      ${goals?`<h2 class="sec" style="font-size:15px;font-family:var(--sans)">Goals</h2><div class="card">${goals}</div>`:""}
+      ${sink?`<h2 class="sec" style="font-size:15px;font-family:var(--sans)">Set aside</h2><div class="card">${sink}</div>`:""}
+      <h2 class="sec" style="font-size:15px;font-family:var(--sans)">Reality check</h2>
+      <p class="sec-note">Optional. If the number's off, it's better to know now than in March.</p>
+      <label class="f"><span>What's in checking today?</span>
+        <div class="money-in"><input type="number" inputmode="decimal" id="ciActual" step="0.01"
+          value="${CI.actual!=null?CI.actual:""}" placeholder="0.00"></div>
+        <div class="hint">The plan expected about ${money(s.expected + (+b.startBalance||0))} left after this check.</div></label>
+    </div>
+    <div class="ob-foot"><div class="two">
+      <button class="btn ghost" id="ciSkip">Skip</button>
+      <button class="btn" id="ciDone">Confirm</button>
+    </div></div></div></div>`;
+  $("obRoot").querySelectorAll("[data-ci]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const k = el.dataset.ci;
+      CI.balances = readBalances();
+      CI.actual = val("ciActual");
+      CI.ticks[k] = !CI.ticks[k];
+      drawCheckin();
+    });
+  });
+  $("ciSkip").addEventListener("click", ()=>{ CI=null; $("obRoot").innerHTML=""; render(); });
+  $("ciDone").addEventListener("click", confirmCheckin);
+}
+function readBalances(){
+  const out = {};
+  $("obRoot").querySelectorAll("input[id^='ci-bal-']").forEach(el=>{
+    if(el.value !== "") out[el.id.replace("ci-bal-","")] = el.value;
+  });
+  return out;
+}
+function confirmCheckin(){
+  const b = B(), s = CI.snap;
+  const bals = readBalances();
+  const actual = val("ciActual");
+  s.items.forEach(o=>{
+    const on = !!CI.ticks[o.key];
+    if(on) setPaid(b, o, true, bals[o.eid]);
+    else setPaid(b, o, false);
+  });
+  s.goals.forEach(g=> setGoalPaid(b, g.id, CI.id, g.amount, !!CI.ticks[goalKey(g.id, CI.id)]));
+  b.log = b.log || {};
+  const expected = s.expected + (+b.startBalance||0);
+  const rec = { at: iso(today()), expected };
+  if(actual !== ""){
+    rec.actual = +actual;
+    rec.drift = +actual - expected;
+    b.startBalance = +actual;      // reality wins: re-base the plan on the real number
+  }
+  b.log[CI.id] = rec;
+  const drift = rec.drift;
+  CI = null; $("obRoot").innerHTML = "";
+  save(); render();
+  if(drift == null) toast("Logged — balances updated");
+  else if(Math.abs(drift) < 20) toast("Logged — you're right on plan");
+  else toast("Logged — you're " + money(Math.abs(drift)) + (drift<0 ? " behind plan" : " ahead of plan"));
+}
+
+/* ============================================================
+   Sheets
+   ============================================================ */
+let sheetSave = null;
+function openSheet(title, body, footLabel, onSave){
+  $("sheetTitle").textContent = title;
+  $("sheetBody").innerHTML = body;
+  $("sheetFoot").innerHTML = footLabel ? `<button class="btn" id="sheetSaveBtn">${footLabel}</button>` : "";
+  sheetSave = onSave || null;
+  $("scrim").classList.add("on"); $("sheet").classList.add("on");
+  $("sheetBody").scrollTop = 0;
+}
+function closeSheet(){ $("scrim").classList.remove("on"); $("sheet").classList.remove("on"); sheetSave=null; }
+const val = id => { const el=$(id); return el? el.value : ""; };
+const numv = id => { const v = parseFloat(String(val(id)).replace(/[^0-9.\-]/g,"")); return isNaN(v)?0:v; };
+
+function payForm(){
+  const b = B();
+  openSheet("Your paycheck", `
+    <label class="f"><span>Take-home per paycheck</span>
+      <div class="money-in"><input type="number" inputmode="decimal" id="payAmt" value="${b.pay.amount||""}" placeholder="0.00" step="0.01"></div>
+      <div class="hint">What actually lands in your account, after taxes, insurance and retirement.</div></label>
+    <label class="f"><span>How often you're paid</span>
+      <select id="payFreq">${PAYF.map(f=>`<option value="${f.id}" ${b.pay.freq===f.id?"selected":""}>${f.name}</option>`).join("")}</select></label>
+    <label class="f"><span>Next payday</span>
+      <input type="date" id="payNext" value="${b.pay.next||iso(today())}"></label>
+    <div class="hr"></div>
+    <label class="f"><span>In your checking account right now</span>
+      <div class="money-in"><input type="number" inputmode="decimal" id="payStart" value="${b.startBalance||""}" placeholder="0.00" step="0.01"></div>
+      <div class="hint">Optional, but it matters. Monthly bills and biweekly pay never line up perfectly, and the money already sitting there is what bridges the gap.</div></label>`,
+    "Save", ()=>{
+      const b2 = B();
+      b2.pay.amount = numv("payAmt"); b2.pay.freq = val("payFreq"); b2.pay.next = val("payNext")||iso(today());
+      b2.startBalance = numv("payStart");
+      save(); closeSheet(); render(); toast("Paycheck saved");
+    });
+}
+function extraForm(id){
+  const b = B(); const x = (b.extras||[]).find(e=>e.id===id) || {label:"", amount:"", date:iso(today())};
+  openSheet(id?"Edit extra income":"Extra income", `
+    <label class="f"><span>What is it</span><input type="text" id="exLabel" value="${esc(x.label)}" placeholder="Overtime, tax refund, side job"></label>
+    <label class="f"><span>Amount</span><div class="money-in"><input type="number" inputmode="decimal" id="exAmt" value="${x.amount||""}" step="0.01"></div></label>
+    <label class="f"><span>When you'll get it</span><input type="date" id="exDate" value="${x.date}"></label>
+    ${id?`<button class="btn danger" style="margin-top:20px" data-act="delExtra" data-id="${id}">Delete</button>`:""}`,
+    "Save", ()=>{
+      const b2=B(); const o = { id:id||uid(), label:val("exLabel")||"Extra income", amount:numv("exAmt"), date:val("exDate")||iso(today()) };
+      b2.extras = b2.extras||[];
+      const i = b2.extras.findIndex(e=>e.id===id);
+      if(i>=0) b2.extras[i]=o; else b2.extras.push(o);
+      save(); closeSheet(); render();
+    });
+}
+function expenseForm(id, presetCat){
+  const b = B();
+  const e = b.expenses.find(x=>x.id===id) || { name:"", amount:"", cat:presetCat||"housing", freq:"monthly", dueDay:1, dueDate:iso(addDays(today(),14)), sinking:false, autopay:false, balance:"", apr:"" };
+  const isDebt = c => c==="creditcard" || c==="loan";
+  openSheet(id?"Edit bill":"Add a bill", `
+    <label class="f"><span>Name</span><input type="text" id="exName" value="${esc(e.name)}" placeholder="Rent, Chase card, car insurance"></label>
+    <label class="f"><span>Amount due</span><div class="money-in"><input type="number" inputmode="decimal" id="exAmount" value="${e.amount||""}" step="0.01" placeholder="0.00"></div></label>
+    <label class="f"><span>Category</span>
+      <div class="chips" id="catChips">${CATS.map(c=>`<button type="button" class="chip ${e.cat===c.id?"on":""}" data-cat="${c.id}"><i style="background:${c.color}"></i>${c.name}</button>`).join("")}</div></label>
+    <div id="debtFields" style="display:${isDebt(e.cat)?"block":"none"}">
+      <div class="two">
+        <label class="f"><span>Balance owed</span><div class="money-in"><input type="number" inputmode="decimal" id="exBal" value="${e.balance||""}" step="0.01"></div></label>
+        <label class="f"><span>Interest rate</span><input type="number" inputmode="decimal" id="exApr" value="${e.apr||""}" step="0.01" placeholder="%"></label>
+      </div>
+      <div class="hint">These two feed the Debt tab. The amount above is treated as your minimum payment.</div>
+    </div>
+    <label class="f"><span>How often</span>
+      <select id="exFreq">${FREQS.map(f=>`<option value="${f.id}" ${e.freq===f.id?"selected":""}>${f.name}</option>`).join("")}</select></label>
+    <div id="dueMonthly" style="display:${(e.freq||"monthly")==="monthly"?"block":"none"}">
+      <label class="f"><span>Due day of the month</span>
+        <select id="exDueDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${(e.dueDay||1)===d?"selected":""}>${ordinal(d)}</option>`).join("")}</select></label>
+    </div>
+    <div id="dueDated" style="display:${(e.freq||"monthly")==="monthly"?"none":"block"}">
+      <label class="f"><span>Next due date</span><input type="date" id="exDueDate" value="${e.dueDate||iso(addDays(today(),14))}"></label>
+    </div>
+    <div class="toggle"><span class="toggle-txt">Split across paychecks<small>Save part of it from every check in between instead of taking the whole thing from one. Good for rent, and for yearly bills like insurance</small></span>
+      <button type="button" class="sw ${e.sinking?"on":""}" id="swSink" aria-pressed="${!!e.sinking}"></button></div>
+    <div class="hint" id="sinkHint" style="color:var(--pine)"></div>
+    <div class="toggle"><span class="toggle-txt">Autopay on the due date<small>Locks it to the last check before the date so the plan won't move it</small></span>
+      <button type="button" class="sw ${e.autopay?"on":""}" id="swAuto" aria-pressed="${!!e.autopay}"></button></div>
+    ${id?`<button class="btn danger" style="margin-top:20px" data-act="delExpense" data-id="${id}">Delete this bill</button>`:""}`,
+    "Save", ()=>{
+      const b2=B();
+      const sel = $("catChips").querySelector(".chip.on");
+      const cat = sel ? sel.dataset.cat : "other";
+      const o = { id:id||uid(), name:val("exName")||"Untitled bill", amount:numv("exAmount"), cat,
+        freq:val("exFreq"), dueDay:+val("exDueDay")||1, dueDate:val("exDueDate")||iso(addDays(today(),14)),
+        sinking:$("swSink").classList.contains("on"), autopay:$("swAuto").classList.contains("on"),
+        balance:numv("exBal"), apr:numv("exApr") };
+      const i = b2.expenses.findIndex(x=>x.id===id);
+      if(i>=0) b2.expenses[i]=o; else b2.expenses.push(o);
+      save(); closeSheet(); render();
+      toast(i>=0 ? "Updated — plan rebalanced" : "Added — plan rebalanced");
+    });
+  $("catChips").addEventListener("click", ev=>{
+    const c = ev.target.closest(".chip"); if(!c) return;
+    $("catChips").querySelectorAll(".chip").forEach(x=>x.classList.remove("on"));
+    c.classList.add("on");
+    $("debtFields").style.display = isDebt(c.dataset.cat) ? "block":"none";
+  });
+  // a bill too big to sit on one check should offer to split before you save it
+  let sinkTouched = !!id;
+  $("swSink").addEventListener("click", ()=>{ sinkTouched = true; });
+  $("exAmount").addEventListener("input", ()=>{
+    if(sinkTouched) return;
+    const pay = +B().pay.amount || 0;
+    const big = pay>0 && numv("exAmount") > pay*0.4;
+    $("swSink").classList.toggle("on", big);
+    $("sinkHint").textContent = big
+      ? "This one's bigger than 40% of a paycheck, so it's set to split. Turn it off if you'd rather pay it all at once."
+      : "";
+  });
+  $("exFreq").addEventListener("change", ()=>{
+    const m = val("exFreq")==="monthly";
+    $("dueMonthly").style.display = m?"block":"none";
+    $("dueDated").style.display = m?"none":"block";
+  });
+}
+function goalForm(id, type){
+  const b = B();
+  const g = (b.goals||[]).find(x=>x.id===id) || { name:"", target:"", months:12, saved:0, type:type||"savings", apr:"" };
+  const isDebt = g.type==="debt";
+  openSheet(id?"Edit goal":(isDebt?"Debt payoff goal":"Savings goal"), `
+    <label class="f"><span>Name</span><input type="text" id="glName" value="${esc(g.name)}" placeholder="${isDebt?"Pay off Chase card":"Emergency fund"}"></label>
+    <label class="f"><span>${isDebt?"Balance to clear":"Target amount"}</span>
+      <div class="money-in"><input type="number" inputmode="decimal" id="glTarget" value="${g.target||""}" step="0.01" placeholder="5000"></div></label>
+    ${isDebt?`<label class="f"><span>Interest rate</span><input type="number" inputmode="decimal" id="glApr" value="${g.apr||""}" step="0.01" placeholder="%">
+      <div class="hint">Used so the timeline accounts for interest as you pay it down.</div></label>`
+      :`<label class="f"><span>Already saved</span><div class="money-in"><input type="number" inputmode="decimal" id="glSaved" value="${g.saved||0}" step="0.01"></div></label>`}
+    <label class="f"><span>Timeframe</span>
+      <div style="display:flex;align-items:baseline;justify-content:space-between">
+        <span class="num" style="font-size:22px" id="glMonthsLbl">${g.months} months</span>
+        <span class="row-sub" id="glPerLbl"></span></div>
+      <input type="range" id="glMonths" min="1" max="60" step="1" value="${g.months||12}">
+      <div class="hint">Drag to see what each paycheck would have to contribute.</div></label>
+    ${id?`<button class="btn danger" style="margin-top:20px" data-act="delGoal" data-id="${id}">Delete goal</button>`:""}`,
+    "Save", ()=>{
+      const b2=B();
+      const o = { id:id||uid(), type:g.type, name:val("glName")|| (g.type==="debt"?"Payoff goal":"Savings goal"),
+        start: g.start || iso(today()),
+        target:numv("glTarget"), months:+val("glMonths")||12,
+        saved: g.type==="savings" ? numv("glSaved") : 0, apr: g.type==="debt" ? numv("glApr") : 0 };
+      b2.goals = b2.goals||[];
+      const i = b2.goals.findIndex(x=>x.id===id);
+      if(i>=0) b2.goals[i]=o; else b2.goals.push(o);
+      save(); closeSheet(); render(); toast("Goal saved — it's in your plan now");
+    });
+  const upd = ()=>{
+    const months = +val("glMonths");
+    $("glMonthsLbl").textContent = months + (months===1?" month":" months");
+    const tmp = { type:g.type, target:numv("glTarget"), saved: g.type==="savings"?numv("glSaved"):0, months, apr:numv("glApr") };
+    $("glPerLbl").textContent = money(goalPerCheck(B(), tmp)) + " per check";
+  };
+  ["glMonths","glTarget","glSaved","glApr"].forEach(i=>{ const el=$(i); if(el) el.addEventListener("input", upd); });
+  upd();
+}
+function itemSheet(key, checkId){
+  const b = B();
+  const c = PLAN.checks.find(x=>x.id===checkId);
+  const o = c && c.items.find(x=>x.key===key);
+  if(!o) return;
+  const paid = !!(b.paid && b.paid[key]);
+  let eligible = PLAN.checks.filter(x=>x.date <= o.due);
+  if(!eligible.length) eligible = [c];
+  openSheet(o.name, `
+    <div class="card" style="margin-top:14px;padding:15px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="row-title">${money2(o.amount)}</span>
+        <span class="row-sub">due ${fmtLong(o.due)}</span></div>
+      <div class="row-sub" style="margin-top:6px">Paying from your ${fmtDate(c.date)} check${o.movedEarly?", moved earlier to keep that check balanced":""}.</div>
+    </div>
+    <label class="f"><span>Pay this from</span>
+      <select id="itChk">${eligible.map(x=>`<option value="${x.id}" ${x.id===checkId?"selected":""}>${fmtLong(x.date)} — ${Math.round(x.load*100)}% used</option>`).join("")}</select>
+      <div class="hint">Only paychecks that land before the due date are listed. Picking one pins it there; the plan won't move it again.</div></label>
+    <button class="btn ghost" style="margin-top:16px" data-act="togglePaid" data-key="${key}">${paid?"Mark as not paid":"Mark as paid"}</button>
+    ${b.pins&&b.pins[key]?`<button class="btn ghost" data-act="unpin" data-key="${key}">Let the app choose again</button>`:""}
+    <button class="btn ghost" data-act="editExpense" data-id="${o.eid}">Edit this bill</button>`,
+    "Done", ()=>{
+      const b2=B(); const sel = val("itChk");
+      if(sel !== checkId){ b2.pins = b2.pins||{}; b2.pins[key] = sel; save(); toast("Pinned to that paycheck"); }
+      closeSheet(); render();
+    });
+}
+function budgetSheet(){
+  openSheet("Budgets", `
+    <p class="sec-note" style="margin-top:12px">Keep more than one to test different goals against the same bills.</p>
+    <div class="card">${store.budgets.map(x=>{
+      const p = buildPlan(x), an = analyze(x,p);
+      return `<button class="row" data-act="pickBudget" data-id="${x.id}">
+        <span class="swatch" style="background:${x.id===store.activeId?'var(--pine)':'var(--line)'}"></span>
+        <span class="row-main"><span class="row-title">${esc(x.name)}</span>
+          <span class="row-sub">${x.expenses.length} bills · ${(x.goals||[]).length} goals · health ${an.score}</span></span>
+        <span class="row-amt">${money(an.leftM)}<small>spare/mo</small></span></button>`;
+    }).join("")}</div>
+    <button class="add" data-act="newBudget">+ Start a new budget</button>
+    <button class="add" data-act="dupBudget">+ Duplicate this one</button>
+    <div class="hint" style="margin-top:10px">A duplicate copies your income, bills and goals so you can change one thing and compare the two in the Health tab.</div>`, null);
+}
+function settingsSheet(){
+  const b = B();
+  openSheet("Settings", `
+    <label class="f"><span>Budget name</span><input type="text" id="stName" value="${esc(b.name)}"></label>
+    <div class="hr"></div>
+    <button class="btn ghost" data-act="export">Export a backup file</button>
+    <button class="btn ghost" data-act="importBtn">Restore from a backup</button>
+    <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+    <div class="hint" style="margin-top:10px">Everything lives on this device only. Nothing is uploaded anywhere. Clearing Safari data would erase it, so keep a backup somewhere safe.</div>
+    <div class="hr"></div>
+    <button class="btn danger" data-act="delBudget">Delete this budget</button>`,
+    "Save", ()=>{ const b2=B(); b2.name = val("stName")||"Budget"; save(); closeSheet(); render(); });
+}
+
+/* ============================================================
+   Guided setup
+   ============================================================ */
+let ob = null;
+function startOnboarding(){
+  ob = { step:0, b:newBudget("My budget") };
+  drawOb();
+}
+function drawOb(){
+  const b = ob.b, s = ob.step;
+  const steps = 5;
+  let body = "";
+  if(s===0){
+    body = `<div class="ob-step">Setting up</div>
+      <h1>Let's make sure no paycheck ever feels bill-heavy.</h1>
+      <p>Four short steps. You'll enter what you take home, what you owe and when it's due, how much you want to keep for yourself, and what you're saving toward.</p>
+      <p>After that the app decides which bills come out of which check, and re-decides every time something changes.</p>
+      <div class="mini-list" style="margin-top:26px">
+        <div class="mini"><b>1. Your pay</b><em>·</em></div>
+        <div class="mini"><b>2. Your bills</b><em>·</em></div>
+        <div class="mini"><b>3. Your spending money</b><em>·</em></div>
+        <div class="mini"><b>4. Your goals</b><em>·</em></div>
+      </div>`;
+  } else if(s===1){
+    body = `<div class="ob-step">Step 1 of 4</div><h1>What do you take home?</h1>
+      <p>Use the amount that actually hits your account, not your salary.</p>
+      <label class="f"><span>Per paycheck</span><div class="money-in">
+        <input type="number" inputmode="decimal" id="obAmt" value="${b.pay.amount||""}" step="0.01" placeholder="0.00"></div></label>
+      <label class="f"><span>How often</span><select id="obFreq">${PAYF.map(f=>`<option value="${f.id}" ${b.pay.freq===f.id?"selected":""}>${f.name}</option>`).join("")}</select></label>
+      <label class="f"><span>Next payday</span><input type="date" id="obNext" value="${b.pay.next}"></label>
+      <label class="f"><span>In checking right now</span><div class="money-in">
+        <input type="number" inputmode="decimal" id="obStart" value="${b.startBalance||""}" step="0.01" placeholder="0.00"></div>
+        <div class="hint">Optional. Monthly bills and biweekly pay never line up perfectly, and this is what bridges the gap between paydays.</div></label>`;
+  } else if(s===2){
+    body = `<div class="ob-step">Step 2 of 4</div><h1>What has to get paid?</h1>
+      <p>Start with rent, then the rest. You can add more later, and every one you add gets re-slotted across your checks.</p>
+      <div class="two"><label class="f" style="flex:2"><span>Bill</span><input type="text" id="obName" placeholder="Rent"></label>
+        <label class="f" style="flex:1"><span>Amount</span><div class="money-in"><input type="number" inputmode="decimal" id="obBillAmt" step="0.01"></div></label></div>
+      <div class="two"><label class="f"><span>Category</span><select id="obCat">${CATS.map(c=>`<option value="${c.id}">${c.name}</option>`).join("")}</select></label>
+        <label class="f"><span>Due day</span><select id="obDay">${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}">${ordinal(d)}</option>`).join("")}</select></label></div>
+      <button class="btn ghost" style="margin-top:14px" id="obAddBill">Add this bill</button>
+      <div class="mini-list">${b.expenses.map(e=>`<div class="mini"><i style="width:9px;height:9px;border-radius:2px;background:${catOf(e.cat).color};display:block"></i>
+        <b>${esc(e.name)}</b><em>${money2(e.amount)}</em>
+        <button data-ob-del="${e.id}" aria-label="Remove"><svg width="13" height="13" viewBox="0 0 14 14"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></div>`).join("")}</div>`;
+  } else if(s===3){
+    const per = payPerYear(b);
+    body = `<div class="ob-step">Step 3 of 4</div><h1>How much stays yours?</h1>
+      <p>Set aside spending money from every check before anything else gets planned. Budgets without this rarely survive.</p>
+      <div class="card" style="padding:16px;margin-top:18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="row-title">Per paycheck</span><span class="num" style="font-size:24px" id="obAllowVal">${money(b.allowance)}</span></div>
+        <input type="range" id="obAllow" min="0" max="${Math.max(200, Math.round((b.pay.amount||400)*0.6/10)*10)}" step="10" value="${b.allowance}">
+        <div class="row-sub" id="obAllowSub">${money(b.allowance*per/12)} a month</div>
+      </div>`;
+  } else if(s===4){
+    body = `<div class="ob-step">Step 4 of 4</div><h1>What are you working toward?</h1>
+      <p>One goal is enough to start. An emergency fund is the usual first choice. Skip it if you'd rather set this up later.</p>
+      <label class="f"><span>Goal name</span><input type="text" id="obGName" placeholder="Emergency fund"></label>
+      <div class="two"><label class="f"><span>Amount</span><div class="money-in"><input type="number" inputmode="decimal" id="obGTarget" step="0.01" placeholder="5000"></div></label>
+      <label class="f"><span>Within</span><select id="obGMonths">${[3,6,9,12,18,24,36].map(m=>`<option value="${m}" ${m===12?"selected":""}>${m} months</option>`).join("")}</select></label></div>
+      <div class="hint" id="obGPer"></div>`;
+  }
+  $("obRoot").innerHTML = `<div class="ob"><div class="ob-in">
+    <div class="ob-bar"><span style="width:${s/steps*100}%"></span></div>
+    <div class="ob-body">${body}</div>
+    <div class="ob-foot"><div class="two">
+      ${s>0?`<button class="btn ghost" id="obBack">Back</button>`:""}
+      <button class="btn" id="obNextBtn">${s===0?"Get started":s===4?"Build my plan":"Continue"}</button>
+    </div></div></div></div>`;
+  if(s===3){
+    const per = payPerYear(ob.b);
+    $("obAllow").addEventListener("input", ev=>{
+      ob.b.allowance = +ev.target.value;
+      $("obAllowVal").textContent = money(ob.b.allowance);
+      $("obAllowSub").textContent = money(ob.b.allowance*per/12) + " a month";
+    });
+  }
+  if(s===4){
+    const upd = ()=>{ const t = parseFloat(val("obGTarget"))||0, m = +val("obGMonths");
+      $("obGPer").textContent = t>0 ? "That's "+money(goalPerCheck(ob.b,{type:"savings",target:t,saved:0,months:m}))+" out of every paycheck." : ""; };
+    ["obGTarget","obGMonths"].forEach(i=>$(i).addEventListener("input",upd));
+    $("obGMonths").addEventListener("change",upd);
+  }
+  if(s===2){
+    $("obAddBill").addEventListener("click", ()=>{
+      const n = val("obName").trim(), a = parseFloat(val("obBillAmt"))||0;
+      if(!n || a<=0){ toast("Add a name and an amount"); return; }
+      ob.b.expenses.push({ id:uid(), name:n, amount:a, cat:val("obCat"), freq:"monthly", dueDay:+val("obDay")||1 });
+      drawOb();
+    });
+    $("obRoot").addEventListener("click", ev=>{
+      const d = ev.target.closest("[data-ob-del]"); if(!d) return;
+      ob.b.expenses = ob.b.expenses.filter(x=>x.id!==d.dataset.obDel); drawOb();
+    });
+  }
+  if($("obBack")) $("obBack").addEventListener("click", ()=>{ collectOb(); ob.step--; drawOb(); });
+  $("obNextBtn").addEventListener("click", ()=>{
+    collectOb();
+    if(ob.step===1 && !ob.b.pay.amount){ toast("Enter what you take home first"); return; }
+    if(ob.step===4){
+      store.budgets.push(ob.b); store.activeId = ob.b.id; store.seenIntro = true; save();
+      $("obRoot").innerHTML = ""; ob=null; render(); toast("Your plan is ready");
+      return;
+    }
+    ob.step++; drawOb();
+  });
+}
+function collectOb(){
+  const s = ob.step, b = ob.b;
+  if(s===1){ b.pay.amount = parseFloat(val("obAmt"))||0; b.pay.freq = val("obFreq");
+    b.pay.next = val("obNext")||b.pay.next; b.startBalance = parseFloat(val("obStart"))||0; }
+  if(s===3){ b.allowance = +val("obAllow")||0; }
+  if(s===4){ const n = val("obGName").trim(), t = parseFloat(val("obGTarget"))||0;
+    if(t>0) b.goals=[{ id:uid(), type:"savings", name:n||"Emergency fund", target:t,
+      months:+val("obGMonths")||12, saved:0, start:iso(today()) }]; }
+}
+
+/* ============================================================
+   Events
+   ============================================================ */
+document.addEventListener("click", ev=>{
+  const t = ev.target;
+  const tab = t.closest("[data-tab]");
+  if(tab){ TAB = tab.dataset.tab; render(); window.scrollTo({top:0}); return; }
+  const eq = t.closest("[data-eq]");
+  if(eq){ const id = eq.dataset.eq; openChecks[id] = !openChecks[id]; render();
+    const node = $("chk-"+id); if(node) node.scrollIntoView({behavior:"smooth", block:"start"}); return; }
+  const ct = t.closest("[data-check-toggle]");
+  if(ct){ const id = ct.dataset.checkToggle; openChecks[id] = !openChecks[id];
+    $("chk-"+id).classList.toggle("open", openChecks[id]); return; }
+  const gt = t.closest("[data-goaltick]");
+  if(gt){ const bb = B(), k = goalKey(gt.dataset.goaltick, gt.dataset.check);
+    setGoalPaid(bb, gt.dataset.goaltick, gt.dataset.check, +gt.dataset.amt, !paidRec(bb,k));
+    save(); render(); return; }
+  const it = t.closest("[data-item]");
+  if(it){
+    if(t.closest(".tick")){ togglePaidByKey(it.dataset.item); return; }
+    itemSheet(it.dataset.item, it.dataset.check); return;
+  }
+  const a = t.closest("[data-act]");
+  if(!a) return;
+  const id = a.dataset.id, b = B();
+  switch(a.dataset.act){
+    case "editPay": payForm(); break;
+    case "addExpense": expenseForm(null, a.dataset.cat); break;
+    case "editExpense": closeSheet(); setTimeout(()=>expenseForm(id),180); break;
+    case "delExpense": if(confirm("Delete this bill?")){ b.expenses = b.expenses.filter(x=>x.id!==id);
+        Object.keys(b.pins||{}).forEach(k=>{ if(k.startsWith(id+"@")) delete b.pins[k]; });
+        save(); closeSheet(); render(); toast("Deleted — plan rebalanced"); } break;
+    case "addExtra": extraForm(null); break;
+    case "editExtra": extraForm(id); break;
+    case "delExtra": b.extras = b.extras.filter(x=>x.id!==id); save(); closeSheet(); render(); break;
+    case "addGoal": goalForm(null, a.dataset.type); break;
+    case "editGoal": goalForm(id); break;
+    case "delGoal": if(confirm("Delete this goal?")){ b.goals = b.goals.filter(x=>x.id!==id); save(); closeSheet(); render(); } break;
+    case "toggleRollover": b.rollover = !b.rollover; save(); render(); break;
+    case "clearPastDue": { b.paid = b.paid||{};
+        PLAN.unfunded.forEach(o=>{ b.paid[o.key] = true; });
+        save(); render(); toast("Cleared — the plan starts from your next check"); } break;
+    case "evenOut": {
+        const r = evenOut(b);
+        if(!r.changed.length){ toast("Already about as even as the due dates allow"); break; }
+        b.expenses.forEach(e=>{ if(r.flags[e.id]) e.sinking = true; });
+        save(); render();
+        toast("Split "+r.changed.join(" and ")+" — now "+money(r.after.lo)+" to "+money(r.after.hi)+" a check");
+      } break;
+    case "splitBill": { const e = b.expenses.find(x=>x.id===id);
+        if(e){ e.sinking = true; save(); render(); toast("Split on — it'll come out of every check now"); } } break;
+    case "togglePaid": togglePaidByKey(a.dataset.key, true); break;
+    case "checkin": { const p = pendingCheckin(b); if(p) openCheckin(p.id); } break;
+    case "unpin": { const k = a.dataset.key; if(b.pins) delete b.pins[k]; save(); closeSheet(); render(); toast("Back on automatic"); } break;
+    case "resetExtra": delete b.debtExtra; save(); render(); break;
+    case "pickBudget": store.activeId = id; save(); closeSheet(); render(); break;
+    case "newBudget": { const nb = newBudget("Budget "+(store.budgets.length+1));
+        store.budgets.push(nb); store.activeId = nb.id; save(); closeSheet(); render(); TAB="money"; render(); } break;
+    case "dupBudget": { const copy = JSON.parse(JSON.stringify(b)); copy.id = uid();
+        copy.name = b.name + " copy"; store.budgets.push(copy); store.activeId = copy.id; save(); closeSheet(); render();
+        toast("Copied — change a goal and compare in Health"); } break;
+    case "delBudget": if(store.budgets.length<2){ toast("This is your only budget"); break; }
+        if(confirm("Delete \""+b.name+"\" for good?")){ store.budgets = store.budgets.filter(x=>x.id!==b.id);
+          store.activeId = store.budgets[0].id; save(); closeSheet(); render(); } break;
+    case "export": exportData(); break;
+    case "importBtn": $("importFile").click(); break;
+  }
+});
+document.addEventListener("change", ev=>{
+  const b = B();
+  if(ev.target.id==="horizonSel"){ b.horizon = +ev.target.value; save(); render(); }
+  if(ev.target.id==="allowRange"){ b.allowance = +ev.target.value; save(); render(); }
+  if(ev.target.id==="extraRange"){ b.debtExtra = +ev.target.value; save(); render(); }
+  if(ev.target.id==="importFile"){ importData(ev.target.files[0]); }
+});
+document.addEventListener("input", ev=>{
+  if(ev.target.id==="allowRange") $("allowVal").textContent = money(+ev.target.value);
+  if(ev.target.id==="extraRange") $("extraVal").textContent = money(+ev.target.value);
+});
+$("sheetClose").addEventListener("click", closeSheet);
+$("scrim").addEventListener("click", closeSheet);
+$("budgetBtn").addEventListener("click", budgetSheet);
+$("settingsBtn").addEventListener("click", settingsSheet);
+document.addEventListener("click", ev=>{ if(ev.target.id==="sheetSaveBtn"){ if(sheetSave) sheetSave(); else closeSheet(); } });
+document.addEventListener("click", ev=>{ const sw = ev.target.closest(".sw"); if(sw && sw.id){ sw.classList.toggle("on"); } });
+
+function togglePaidByKey(key, alsoClose){
+  const b = B();
+  let occ = null;
+  PLAN.checks.forEach(c=>c.items.forEach(o=>{ if(o.key===key) occ = o; }));
+  if(!occ){ (b.snaps&&Object.values(b.snaps)||[]).forEach(sn=>sn.items.forEach(o=>{ if(o.key===key) occ=o; })); }
+  if(!occ) return;
+  const was = !!paidRec(b, key);
+  const rec = setPaid(b, occ, !was);
+  save(); if(alsoClose) closeSheet(); render();
+  const e = b.expenses.find(x=>x.id===occ.eid);
+  if(!was && rec && rec.delta && e) toast(e.name + " now " + money(e.balance) + " — " + money(rec.interest) + " of that payment was interest");
+}
+
+/* ---------- backup ---------- */
+function exportData(){
+  const blob = new Blob([JSON.stringify(store,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "paycheck-plan-"+iso(today())+".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  toast("Backup saved to your files");
+}
+function importData(file){
+  if(!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const p = JSON.parse(r.result);
+      if(!p || !Array.isArray(p.budgets)) throw new Error("bad file");
+      store = p; if(!store.activeId && store.budgets[0]) store.activeId = store.budgets[0].id;
+      save(); closeSheet(); render(); toast("Backup restored");
+    }catch(e){ toast("That file isn't a Paycheck Plan backup"); }
+  };
+  r.readAsText(file);
+}
+
+/* ---------- go ---------- */
+load();
+if(!store.budgets.length){ startOnboarding(); }
+else {
+  if(!store.activeId) store.activeId = store.budgets[0].id;
+  const first = buildPlan(B()).checks[0];
+  if(first) openChecks[first.id] = true;   // the next payday is what you came to see
+  render();
+  const due = pendingCheckin(B());
+  if(due) openCheckin(due.id);
+}
+if("serviceWorker" in navigator && location.protocol === "https:"){
+  window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>
