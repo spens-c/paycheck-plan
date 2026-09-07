@@ -287,6 +287,7 @@ input[type=range]::-moz-range-thumb{width:24px;height:24px;border:1px solid var(
 
   <main>
     <section class="view on" id="view-plan"></section>
+    <section class="view" id="view-bills"></section>
     <section class="view" id="view-money"></section>
     <section class="view" id="view-goals"></section>
     <section class="view" id="view-debt"></section>
@@ -954,6 +955,7 @@ let TAB = "plan", PLAN = null, openChecks = {};
 const $ = id => document.getElementById(id);
 const TABS = [
   {id:"plan",  name:"Plan",   icon:'<path d="M3 5h18M3 12h18M3 19h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'},
+  {id:"bills", name:"Bills",  icon:'<path d="M5.5 2.5h13v19l-2.2-1.6-2.2 1.6-2.1-1.6-2.2 1.6-2.1-1.6-2.2 1.6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 8h6M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'},
   {id:"money", name:"Money",  icon:'<rect x="2.5" y="5.5" width="19" height="13" rx="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" stroke="currentColor" stroke-width="1.7"/>'},
   {id:"goals", name:"Goals",  icon:'<circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3.4" stroke="currentColor" stroke-width="1.7"/>'},
   {id:"debt",  name:"Debt",   icon:'<path d="M4 18V9M10 18V5M16 18v-6M4 21h17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'},
@@ -976,7 +978,15 @@ function render(){
   $("budgetName").textContent = b.name;
   const next = PLAN.checks[0];
   $("topNext").textContent = next ? fmtDate(next.date) : "Add pay";
-  if(TAB==="debt"){
+  if(TAB==="bills"){
+    const billsM = b.expenses.reduce((s2,e)=>s2+monthlyCost(e),0);
+    $("topLabel").textContent = "Bills each month";
+    $("topBig").textContent = money(billsM);
+    $("topBig").style.color = "#EAF1EB";
+    $("topSub").innerHTML = b.expenses.length
+      ? `${b.expenses.length} bill${b.expenses.length===1?"":"s"} · <b>${money(a.inc>0?billsM/a.inc*100:0).replace("$","")}%</b> of take-home`
+      : "Nothing added yet";
+  } else if(TAB==="debt"){
     const ds = debtSummary(b, PLAN);
     $("topLabel").textContent = "Total balance owed";
     $("topBig").textContent = money(ds.totalBal);
@@ -991,6 +1001,7 @@ function render(){
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));
   $("view-"+TAB).classList.add("on");
   if(TAB==="plan") renderPlan(b);
+  if(TAB==="bills") renderBills(b);
   if(TAB==="money") renderMoney(b);
   if(TAB==="goals") renderGoals(b);
   if(TAB==="debt") renderDebt(b);
@@ -1119,7 +1130,7 @@ function checkCard(b,c){
 }
 
 /* ---------- Money ---------- */
-function renderMoney(b){
+function renderBills(b){
   const per = payPerYear(b);
   const byCat = {};
   b.expenses.forEach(e=>{ (byCat[e.cat] = byCat[e.cat]||[]).push(e); });
@@ -1131,6 +1142,18 @@ function renderMoney(b){
         <span>${c.name}</span><span class="num" style="font-size:14px;color:var(--ink3)">${money(tot)}/mo</span></h2>
       <div class="card">${byCat[cid].map(e=>expenseRow(b,e)).join("")}</div>`;
   }).join("");
+  const split = b.expenses.filter(e=>e.sinking);
+  $("view-bills").innerHTML = `
+    ${b.expenses.length ? `<button class="add" style="margin-top:0" data-act="addExpense">+ Add a bill</button>` : ""}
+    ${list || `<div class="empty"><h4>No bills yet</h4><p>Add your fixed bills with their due dates. The plan builds itself from there, and re-decides every time you change something.</p><button class="btn" data-act="addExpense">Add a bill</button></div>`}
+    ${b.expenses.length ? `<button class="add" data-act="addExpense">+ Add a bill</button>` : ""}
+    ${split.length ? `<p class="sec-note" style="margin-top:18px">${split.map(e=>esc(e.name)).join(", ")} ${split.length===1?"is":"are"} set aside a piece at a time instead of coming out of one check. Tap a bill to change that, or anything else about it.</p>`
+      : `<p class="sec-note" style="margin-top:18px">Tap any bill to change its amount, due date, frequency or category.</p>`}
+    <div style="height:10px"></div>`;
+}
+
+function renderMoney(b){
+  const per = payPerYear(b);
   $("view-money").innerHTML = `
     <h2 class="sec">Income</h2>
     <p class="sec-note">Use your take-home pay, after taxes and deductions.</p>
@@ -1174,11 +1197,6 @@ function renderMoney(b){
       <div class="row-sub" style="margin-top:2px">Loose spending money on top of what you've earmarked.</div>
       <input type="range" id="allowRange" min="0" max="${Math.max(200, Math.round((b.pay.amount||400)*0.6/10)*10)}" step="10" value="${b.allowance||0}">
     </div></div>
-
-    <h2 class="sec">Bills and expenses</h2>
-    <p class="sec-note">${b.expenses.length? b.expenses.length+" entries · "+money(b.expenses.reduce((s,e)=>s+monthlyCost(e),0))+" a month" : "Nothing here yet. Add rent first, then work down."}</p>
-    ${list || `<div class="empty"><h4>No bills yet</h4><p>Add your fixed bills with their due dates. The plan builds itself from there.</p><button class="btn" data-act="addExpense">Add a bill</button></div>`}
-    ${b.expenses.length? `<button class="add" data-act="addExpense">+ Add a bill</button>`:""}
 
     <div class="toggle"><span class="toggle-txt">Carry leftovers forward<small>Money left on one check rolls into the next instead of vanishing</small></span>
       <button class="sw ${b.rollover?'on':''}" data-act="toggleRollover" aria-pressed="${!!b.rollover}"></button></div>
@@ -2018,11 +2036,16 @@ function budgetSheet(){
     <p class="sec-note" style="margin-top:12px">Keep more than one to test different goals against the same bills.</p>
     <div class="card">${store.budgets.map(x=>{
       const p = buildPlan(x), an = analyze(x,p);
-      return `<button class="row" data-act="pickBudget" data-id="${x.id}">
+      return `<div class="row">
         <span class="swatch" style="background:${x.id===store.activeId?'var(--pine)':'var(--line)'}"></span>
-        <span class="row-main"><span class="row-title">${esc(x.name)}</span>
-          <span class="row-sub">${x.expenses.length} bills · ${(x.goals||[]).length} goals · health ${an.score}${x.sharedAt?" · shared "+fmtDate(D(x.sharedAt)):""}</span></span>
-        <span class="row-amt">${money(an.leftM)}<small>spare/mo</small></span></button>`;
+        <button class="row-main" data-act="pickBudget" data-id="${x.id}" style="text-align:left;padding:0">
+          <span class="row-title" style="display:block">${esc(x.name)}</span>
+          <span class="row-sub" style="display:block">${x.expenses.length} bills · ${(x.goals||[]).length} goals · health ${an.score}${x.sharedAt?" · shared "+fmtDate(D(x.sharedAt)):""}</span></button>
+        <span class="row-amt">${money(an.leftM)}<small>spare/mo</small></span>
+        <button data-act="delBudget" data-id="${x.id}" aria-label="Delete ${esc(x.name)}"
+          style="color:var(--ink3);padding:6px 2px 6px 10px;flex:none">
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M3.5 5.5h13M8 5.5V3.8h4v1.7M5.5 5.5l.8 11.2h7.4l.8-11.2M8.6 8.6v5M11.4 8.6v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button></div>`;
     }).join("")}</div>
     <button class="add" data-act="newBudget">+ Start a new budget</button>
     <button class="add" data-act="dupBudget">+ Duplicate this one</button>
@@ -2280,9 +2303,17 @@ document.addEventListener("click", ev=>{
     case "dupBudget": { const copy = JSON.parse(JSON.stringify(b)); copy.id = uid();
         copy.name = b.name + " copy"; store.budgets.push(copy); store.activeId = copy.id; save(); closeSheet(); render();
         toast("Copied — change a goal and compare in Health"); } break;
-    case "delBudget": if(store.budgets.length<2){ toast("This is your only budget"); break; }
-        if(confirm("Delete \""+b.name+"\" for good?")){ store.budgets = store.budgets.filter(x=>x.id!==b.id);
-          store.activeId = store.budgets[0].id; save(); closeSheet(); render(); } break;
+    case "delBudget": {
+        const t2 = id ? store.budgets.find(x=>x.id===id) : b;
+        if(!t2) break;
+        const last = store.budgets.length === 1;
+        if(!confirm("Delete \""+t2.name+"\" for good?"+(last?" This is your only budget, so the app will start over from setup.":" This can't be undone."))) break;
+        store.budgets = store.budgets.filter(x=>x.id!==t2.id);
+        if(store.activeId === t2.id) store.activeId = store.budgets.length ? store.budgets[0].id : null;
+        save(); closeSheet();
+        if(!store.budgets.length){ $("obRoot").innerHTML = ""; startOnboarding(); }
+        else { render(); toast("Deleted"); }
+      } break;
     case "shareBudget": shareSheet(); break;
     case "shareAdd": applyShare("add"); break;
     case "shareUpdate": applyShare("update"); break;
