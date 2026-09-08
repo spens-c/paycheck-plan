@@ -385,7 +385,7 @@ function save(){
 function newBudget(name){
   return { id:uid(), name:name||"My budget", created:iso(today()),
     pay:{ amount:0, freq:"biweekly", next:iso(addDays(today(),7)) },
-    extras:[], expenses:[], goals:[], buckets:[], allowance:0, horizon:6, startBalance:0,
+    extras:[], expenses:[], goals:[], buckets:[], allowance:0, horizon:6, startBalance:0, autoPost:true,
     rollover:true, pins:{}, paid:{}, snaps:{}, log:{} };
 }
 const B = () => store.budgets.find(b=>b.id===store.activeId) || store.budgets[0];
@@ -460,10 +460,11 @@ function autoSplit(b){
   });
   return changed;
 }
-function genOccurrences(b, endDate){
-  const out=[]; const start = today();
+function genOccurrences(b, endDate, startDate){
+  const out=[]; const start = startDate || today();
   (b.expenses||[]).forEach(e=>{
-    if(e.paused || e.offBudget) return;   // paid from another account, not from these checks
+    if(e.paused) return;
+    if(e.offBudget && !startDate) return;  // paid elsewhere: not a bill, but still owed
     const amt = +e.amount || 0;
     const f = e.freq || "monthly";
     if(f==="monthly"){
@@ -1025,7 +1026,7 @@ function analyze(b, plan){
 /* ============================================================
    UI shell
    ============================================================ */
-let TAB = "plan", PLAN = null, openChecks = {};
+let TAB = "plan", PLAN = null, openChecks = {}, LAST_POSTED = [];
 const $ = id => document.getElementById(id);
 const TABS = [
   {id:"plan",  name:"Plan",   icon:'<path d="M3 5h18M3 12h18M3 19h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'},
@@ -1046,6 +1047,8 @@ function render(){
   if(!b) return;
   let dirty = autoSplit(b);
   PLAN = buildPlan(b);
+  const justPosted = autoPostPayments(b, PLAN);
+  if(justPosted.length){ LAST_POSTED = justPosted; dirty = true; PLAN = buildPlan(b); }
   if(snapshot(b, PLAN)) dirty = true;
   if(dirty) save();
   const a = analyze(b, PLAN);
@@ -1479,8 +1482,14 @@ function renderDebt(b){
       <div class="row-sub" style="margin-top:4px">${isFinite(res.months)?`Debt-free ${payoffDate(res.months)} · ${money(res.interest)} total interest`:"Minimum payments don't cover the interest at this rate"}</div>
       <div class="row-sub" style="margin-top:6px;color:var(--ink2)">${name==="Avalanche"?"Highest interest rate first":"Smallest balance first"}</div>
     </div>`;
+  const hist = paymentHistory(b).slice(0, 10);
+  const postedNote = LAST_POSTED.length ? `
+    <div class="flag good" style="margin-top:14px"><h4><span>${LAST_POSTED.length} payment${LAST_POSTED.length>1?"s":""} posted since you last looked</span>
+      <em>${money(LAST_POSTED.reduce((t,x)=>t+Math.abs(x.delta),0))}</em></h4>
+      <p>${LAST_POSTED.slice(0,4).map(x=>esc(x.name)+" "+money(x.amount)+(x.extra?" extra":"")).join(", ")}${LAST_POSTED.length>4?" and "+(LAST_POSTED.length-4)+" more":""}. Balances above are updated. If any of that isn't what actually left your account, correct it below.</p></div>` : "";
   $("view-debt").innerHTML = `
     ${listing}
+    ${postedNote}
     ${s.offMin>0?`<p class="sec-note" style="margin-top:14px">${money(s.offMin)} a month of these minimums comes out of another account, so it isn't taken from these paychecks. It's still counted in the payoff maths below.</p>`:""}
     <h2 class="sec">Paying it down</h2>
     <p class="sec-note">Your minimums are already covered — ${money(s.totalMin - s.offMin)} a month sits in your bills${s.offMin>0?" and "+money(s.offMin)+" comes from elsewhere":""}. This is only about what goes in on top.</p>
@@ -1524,7 +1533,14 @@ function renderDebt(b){
       const cost = Math.abs(di) < 1 ? "costs the same in interest" : `${di>0?"costs":"saves"} ${money(Math.abs(di))} in interest`;
       return `<div class="flag watch" style="margin-top:11px"><h4><span>If you went the other way</span><em>${money(Math.abs(di))}</em></h4>
         <p>Switching to ${other} ${cost} and ${timing}. ${di<-1?"The math favours it, but only just — pick whichever order you'll actually stick to.":"Not worth it here."}</p></div>`; })()}`:""}
-    <p class="sec-note" style="margin-top:18px">Balances here don't update on their own. Edit the card under Money when you pay it down so the projection stays honest.</p>`;
+    ${hist.length ? `<h2 class="sec">Payments posted</h2>
+      <p class="sec-note">Each due date that goes by is assumed paid, and the balance drops accordingly. Tap any line to say what actually left your account.</p>
+      <div class="card">${hist.map(x=>`<button class="row" data-act="fixPayment" data-key="${esc(x.key)}">
+        <span class="swatch" style="background:${x.extra?"var(--violet)":"var(--clay)"}"></span>
+        <span class="row-main"><span class="row-title">${esc(x.name)}${x.extra?" — extra":""}</span>
+          <span class="row-sub">${x.when}${x.interest>0?` · ${money(x.interest)} of it was interest`:""}${x.corrected?" · corrected":""}</span></span>
+        <span class="row-amt">${money(x.amount)}<small>balance ${money(Math.abs(x.delta))} down</small></span></button>`).join("")}</div>` : ""}
+    <p class="sec-note" style="margin-top:18px">Posting happens automatically as due dates pass. You can switch it off in Settings if you'd rather record every payment yourself.</p>`;
 }
 
 /* ---------- Health ---------- */
@@ -1826,6 +1842,119 @@ function confirmCheckin(){
   if(drift == null) toast("Logged — balances updated");
   else if(Math.abs(drift) < 20) toast("Logged — you're right on plan");
   else toast("Logged — you're " + money(Math.abs(drift)) + (drift<0 ? " behind plan" : " ahead of plan"));
+}
+
+/* ============================================================
+   Posting payments as their due dates pass
+   The assumption is simple: a minimum payment on a due date got made, and the
+   extra you committed went at the payoff target. Both are recorded, both are
+   reversible, and both can be corrected to whatever you actually paid.
+   ============================================================ */
+const XKEY = (eid, ym) => "xtra:" + eid + "@" + ym;
+const ym = d => iso(d).slice(0,7);
+
+function occurrencesFor(b, e, from, to){
+  const solo = { ...b, expenses:[e], goals:[] };
+  return genOccurrences(solo, to, from).filter(o => o.due >= from && o.due <= to);
+}
+function applyExtra(b, key, eid, amount){
+  const e = (b.expenses||[]).find(x=>x.id===eid);
+  if(!e || amount <= 0) return null;
+  const before = +e.balance||0;
+  if(before <= 0) return null;
+  const after = Math.round(Math.max(0, before - amount)*100)/100;
+  const delta = Math.round((after - before)*100)/100;
+  e.balance = after;
+  b.paid = b.paid || {};
+  b.paid[key] = { on:true, delta, interest:0, eid, amount, auto:true, extra:true, at:iso(today()) };
+  return b.paid[key];
+}
+function monthlyExtraTotal(b, plan){
+  const s = debtSummary(b, plan);
+  return s.extra;
+}
+function autoPostPayments(b, plan){
+  const posted = [];
+  if(b.autoPost === false) return posted;
+  // a budget that has never posted starts from today: never invent back history
+  if(!b.lastPost){ b.lastPost = iso(today()); return posted; }
+  const to = addDays(today(), -1);                       // only due dates already past
+  let from = D(b.lastPost);
+  const floor = addMonths(today(), -24);
+  if(from < floor) from = floor;
+  if(to < from){ return posted; }
+
+  // 1. the minimum on each debt, on each due date that has gone by
+  (b.expenses||[])
+    .filter(e => isDebtCat(e.cat) && (+e.balance||0) > 0 && (+e.amount||0) > 0)
+    .forEach(e => {
+      occurrencesFor(b, e, from, to).forEach(o => {
+        if(paidRec(b, o.key)) return;
+        const rec = setPaid(b, o, true);
+        if(rec){ rec.auto = true;
+          posted.push({ key:o.key, name:e.name, when:iso(o.due), amount:o.amount,
+                        interest:rec.interest||0, delta:rec.delta||0, eid:e.id }); }
+      });
+    });
+
+  // 2. the extra you committed, once for each month that has fully passed
+  const extraM = monthlyExtraTotal(b, plan);
+  if(extraM > 0.5){
+    let m = new Date(from.getFullYear(), from.getMonth(), 1);
+    const lastFull = new Date(to.getFullYear(), to.getMonth(), 1);
+    let guard = 0;
+    while(m <= lastFull && guard++ < 30){
+      const monthEnd = new Date(m.getFullYear(), m.getMonth()+1, 0);
+      if(monthEnd <= to){
+        const target = nextDebtTarget(b);
+        if(target){
+          const key = XKEY(target.id, ym(m));
+          if(!paidRec(b, key)){
+            const rec = applyExtra(b, key, target.id, extraM);
+            if(rec) posted.push({ key, name:target.name, when:iso(monthEnd), amount:extraM,
+                                  interest:0, delta:rec.delta, eid:target.id, extra:true });
+          }
+        }
+      }
+      m = addMonths(m, 1);
+    }
+  }
+  b.lastPost = iso(today());
+  return posted;
+}
+function paymentHistory(b){
+  const out = [];
+  Object.keys(b.paid||{}).forEach(k=>{
+    const r = paidRec(b, k);
+    if(!r || !r.eid || !r.delta) return;
+    const e = (b.expenses||[]).find(x=>x.id===r.eid);
+    if(!e) return;
+    const stamp = k.indexOf("xtra:")===0 ? (k.split("@")[1]||"") : (k.split("@")[1]||r.at||"");
+    out.push({ key:k, name:e.name, when:stamp, amount:+r.amount||0,
+               interest:+r.interest||0, delta:+r.delta||0, extra:!!r.extra, auto:!!r.auto });
+  });
+  return out.sort((a,b2)=> a.when < b2.when ? 1 : a.when > b2.when ? -1 : 0);
+}
+function correctPayment(b, key, actual){
+  const r = paidRec(b, key);
+  if(!r) return;
+  const e = (b.expenses||[]).find(x=>x.id===r.eid);
+  if(!e) return;
+  const pre = Math.round(((+e.balance||0) - r.delta)*100)/100;   // balance before this payment
+  const after = Math.round(Math.max(0, pre + (r.interest||0) - Math.max(0, actual))*100)/100;
+  e.balance = after;
+  r.delta = Math.round((after - pre)*100)/100;
+  r.amount = Math.max(0, actual);
+  r.corrected = true;
+  b.paid[key] = r;
+}
+// full reversal, used when a payment is un-ticked before it was ever made
+function unpostPayment(b, key){
+  const r = paidRec(b, key);
+  if(!r) return;
+  const e = (b.expenses||[]).find(x=>x.id===r.eid);
+  if(e && r.delta) e.balance = Math.max(0, Math.round(((+e.balance||0) - r.delta)*100)/100);
+  delete b.paid[key];
 }
 
 /* ============================================================
@@ -2343,6 +2472,36 @@ function askFix(fx){
     });
 }
 
+function fixPaymentSheet(key){
+  const b = B();
+  const r = paidRec(b, key);
+  if(!r) return;
+  const e = (b.expenses||[]).find(x=>x.id===r.eid);
+  if(!e) return;
+  const pre = Math.round(((+e.balance||0) - r.delta)*100)/100;
+  openSheet("What did you actually pay?", `
+    <div class="card" style="margin-top:14px;padding:15px 16px">
+      <div class="row-title">${esc(e.name)}</div>
+      <div class="row-sub" style="margin-top:5px">The app assumed <b>${money(r.amount)}</b>${r.interest>0?`, of which ${money(r.interest)} went to interest`:""}, taking the balance from ${money(pre)} to <b>${money(e.balance)}</b>.</div>
+    </div>
+    <label class="f"><span>Amount actually paid</span>
+      <div class="money-in"><input type="number" inputmode="decimal" id="fxAmt" value="${r.amount}" step="0.01"></div>
+      <div class="hint" id="fxHint"></div></label>
+    <button class="btn ghost" style="margin-top:18px" data-act="missedPayment" data-key="${esc(key)}">I didn't pay this one</button>
+    <div class="hint">The interest still applies, so the balance goes up rather than back to where it was.</div>`,
+    "Save the real number", ()=>{
+      const b2 = B();
+      correctPayment(b2, key, numv("fxAmt"));
+      save(); closeSheet(); render(); toast("Balance corrected");
+    });
+  const upd = ()=>{
+    const v = numv("fxAmt");
+    const after = Math.max(0, pre + (r.interest||0) - v);
+    $("fxHint").textContent = "That leaves the balance at " + money2(after) + ".";
+  };
+  $("fxAmt").addEventListener("input", upd); upd();
+}
+
 function budgetSheet(){
   openSheet("Budgets", `
     <p class="sec-note" style="margin-top:12px">Keep more than one to test different goals against the same bills.</p>
@@ -2367,6 +2526,8 @@ function settingsSheet(){
   const b = B();
   openSheet("Settings", `
     <label class="f"><span>Budget name</span><input type="text" id="stName" value="${esc(b.name)}"></label>
+    <div class="toggle"><span class="toggle-txt">Post payments automatically<small>As each due date passes, assume the minimum was paid and drop the balance. You can correct any of them on the Debt tab</small></span>
+      <button class="sw ${b.autoPost!==false?'on':''}" data-act="toggleAutoPost" aria-pressed="${b.autoPost!==false}"></button></div>
     <div class="hr"></div>
     <button class="btn ghost" data-act="shareBudget">Share this budget with someone</button>
     <div class="hint" style="margin-top:8px">Sends the whole budget inside a link, so you both see the same plan. The plain app address on its own carries no data.</div>
@@ -2652,6 +2813,16 @@ document.addEventListener("click", ev=>{
     case "setAllow":  b.allowance    = +a.dataset.val||0; save(); render(); break;
     case "setKeep":   b.keepPerCheck = +a.dataset.val||0; save(); render(); break;
     case "setExtra":  b.debtExtra    = +a.dataset.val||0; save(); render(); break;
+    case "fixPayment": fixPaymentSheet(a.dataset.key); break;
+    case "missedPayment": {
+        // a skipped payment isn't an erased month: the interest still landed
+        correctPayment(b, a.dataset.key, 0);
+        save(); closeSheet(); render(); toast("Recorded as missed — interest still applied");
+      } break;
+    case "toggleAutoPost": { b.autoPost = (b.autoPost === false);
+        if(b.autoPost) b.lastPost = iso(today());
+        save(); closeSheet(); render();
+        toast(b.autoPost ? "Payments will post as due dates pass" : "You'll record payments yourself"); } break;
     case "toggleRollover": b.rollover = !b.rollover; save(); render(); break;
     case "clearPastDue": {
         // route through setPaid so a card marked already-paid also drops its balance
