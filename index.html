@@ -144,6 +144,7 @@ nav.tabs button.on .dot{opacity:1}
 .btn:disabled{opacity:.4}
 .btn.ghost{background:transparent;color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line)}
 .btn.danger{background:transparent;color:var(--clay);box-shadow:inset 0 0 0 1px #E9C9C3}
+.btn.wreck{background:var(--clay);color:#fff}
 .btn + .btn{margin-top:9px}
 .empty{background:var(--surface);border-radius:14px;padding:26px 20px;text-align:center;box-shadow:var(--shadow)}
 .empty h4{font-family:var(--serif);font-size:17px;margin:0 0 6px;font-weight:600}
@@ -180,11 +181,12 @@ select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.o
 .sw::after{content:"";position:absolute;top:2.5px;left:2.5px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s}
 .sw.on{background:var(--pine)}
 .sw.on::after{transform:translateX(19px)}
-input[type=range]{width:100%;-webkit-appearance:none;background:transparent;margin:10px 0 2px}
-input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:var(--line)}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;border:1px solid var(--line);box-shadow:0 1px 4px rgba(18,38,31,.25);margin-top:-11px}
-input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:var(--line)}
-input[type=range]::-moz-range-thumb{width:24px;height:24px;border:1px solid var(--line);border-radius:50%;background:#fff}
+.quick{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+.quick button{flex:1;min-width:56px;padding:9px 6px;border-radius:9px;background:var(--paper);font-size:13px;font-weight:600;color:var(--ink2);white-space:nowrap}
+.quick button.on{background:var(--pine);color:#fff}
+.amt-field{display:flex;align-items:center;gap:10px;margin-top:12px}
+.amt-field .money-in{flex:1}
+.amt-field input{font-family:var(--serif);font-size:19px;font-variant-numeric:tabular-nums}
 
 /* ---------- sheet ---------- */
 .scrim{position:fixed;inset:0;background:rgba(12,26,21,.42);z-index:50;opacity:0;pointer-events:none;transition:opacity .22s}
@@ -461,7 +463,7 @@ function autoSplit(b){
 function genOccurrences(b, endDate){
   const out=[]; const start = today();
   (b.expenses||[]).forEach(e=>{
-    if(e.paused) return;
+    if(e.paused || e.offBudget) return;   // paid from another account, not from these checks
     const amt = +e.amount || 0;
     const f = e.freq || "monthly";
     if(f==="monthly"){
@@ -502,6 +504,7 @@ function cycleStart(o){
   if(o.freq==="once")      return addDays(today(),-1);
   return addMonths(d,-1);
 }
+const onBudget = e => !e.offBudget;
 function monthlyCost(e){
   const f = FREQS.find(x=>x.id===(e.freq||"monthly"));
   if(!f || f.perYear===0) return 0;
@@ -511,6 +514,19 @@ function monthlyCost(e){
 /* ============================================================
    The plan: assign every bill to a paycheck, then level the load
    ============================================================ */
+/* A flexible goal has no deadline and no fixed amount. Each paycheck pays its
+   bills first, then whatever is left runs down the flexible goals in priority
+   order until it's gone — so a bill-heavy check simply contributes less, and no
+   goal can ever push a paycheck short. */
+const isFlex = g => !!(g && g.flex);
+const debtOwed = b => (b.expenses||[])
+  .filter(e => e.cat==="creditcard" || e.cat==="loan")
+  .reduce((s,e)=> s + (+e.balance||0), 0);
+function goalRoom(b, g){
+  if(g.type === "debt") return debtOwed(b) || Infinity;
+  const t = +g.target || 0;
+  return t > 0 ? Math.max(0, t - (+g.saved||0)) : Infinity;
+}
 function goalStart(b,g){ return D(g.start || b.created || iso(today())); }
 function goalEnd(b,g){ return addMonths(goalStart(b,g), +g.months||12); }
 function goalMonthsLeft(b,g){
@@ -519,6 +535,7 @@ function goalMonthsLeft(b,g){
   return Math.max(1, (+g.months||12) - gone);
 }
 function goalPerCheck(b, g){
+  if(isFlex(g)) return 0;            // decided per paycheck, not up front
   const per = payPerYear(b);
   const months = goalMonthsLeft(b, g);
   if(g.type==="savings"){
@@ -540,9 +557,15 @@ function buildPlan(b){
   const per = payPerYear(b);
   const goals = (b.goals||[]).map(g=>({ ...g, per:goalPerCheck(b,g) }));
   const goalTotal = goals.reduce((s,g)=>s+g.per,0);
+  const flexGoals = (b.goals||[]).filter(isFlex);
+  const flexRoom = flexGoals.map(g=>goalRoom(b,g));
+  const keepBack = +b.keepPerCheck||0;
   const allowance = allowanceTotal(b);
+  // extra debt payments you've committed to: real money, reserved like anything else
+  const debtExtra = (+b.debtExtra||0) * 12 / per;
 
-  if(!checks.length) return { checks:[], occs:[], goals, goalTotal, allowance, unfunded:[], per };
+  if(!checks.length) return { checks:[], occs:[], goals, goalTotal, allowance, flexGoals:[],
+                              flexAvg:{}, keepBack:0, unfunded:[], per };
 
   // split bills: save a slice from each check inside that bill's own cycle, so one
   // occurrence is never charged to more checks than it has time to save across
@@ -577,7 +600,7 @@ function buildPlan(b){
 
   // fixed load that every check carries no matter what
   const fixed = checks.map(c=>{
-    let f = allowance + goalTotal;
+    let f = allowance + goalTotal + debtExtra;
     sinkingRes.forEach(o=>{ if(o.spanIds[c.id]) f += o.spread; });
     return f;
   });
@@ -614,7 +637,7 @@ function buildPlan(b){
   checks.forEach((c,i)=>{
     c.bills=0; c.debtBills=0; c.items=[];
     c.allowance = allowance; c.free = +b.allowance||0; c.buckets = b.buckets||[];
-    c.goalTotal = goalTotal; c.goals = goals;
+    c.goalTotal = goalTotal; c.goals = goals; c.debtExtra = debtExtra;
     c.sinking = [];
     sinkingRes.forEach(o=>{ if(o.spanIds[c.id]){ c.sinking.push({name:o.name, amount:o.spread, due:o.due, key:o.key}); } });
     c.sinkTotal = c.sinking.reduce((s,x)=>s+x.amount,0);
@@ -631,23 +654,48 @@ function buildPlan(b){
   checks.forEach(c=>{
     c.items.sort((a,b2)=> a.due-b2.due || b2.amount-a.amount);
     c.paidTotal = c.items.reduce((s,o)=> s + ((b.paid&&b.paid[o.key])?o.amount:0), 0);
-    c.spent = (c.bills - c.paidTotal) + c.sinkTotal + c.allowance + c.goalTotal;
-    c.left = c.income - c.spent;              // money left from this paycheck alone
-    c.load = c.income>0 ? c.spent/c.income : (c.spent>0?9:0);
-    c.dry  = c.load > 1.0001;
+    c.spent = (c.bills - c.paidTotal) + c.sinkTotal + c.allowance + c.goalTotal + c.debtExtra;
+    c.surplus = c.income - c.spent;           // what this paycheck has spare
+    // cascade the surplus down the flexible goals, in order, capped by what each still needs
+    let spare = Math.max(0, c.surplus - keepBack);
+    c.flex = [];
+    flexGoals.forEach((g,i)=>{
+      if(spare <= 0.5 || flexRoom[i] <= 0.5) return;
+      const take = Math.min(spare, flexRoom[i]);
+      c.flex.push({ id:g.id, name:g.name, type:g.type, amount:take,
+                    fills: flexRoom[i] - take <= 0.5 });
+      spare -= take; flexRoom[i] -= take;
+    });
+    c.flexTotal = c.flex.reduce((t,f)=>t+f.amount, 0);
+    c.committed = c.spent;                    // everything you're obliged to cover
+    c.spent += c.flexTotal;
+    c.left = c.income - c.spent;
+    // load measures obligations only — flexible goals fill whatever is left by
+    // definition, so counting them would flatten every check to 100%
+    c.load = c.income>0 ? c.committed/c.income : (c.committed>0?9:0);
   });
   // running checking balance over the next few months, so we can tell the user how
   // much of a float the monthly-bills-vs-biweekly-pay mismatch actually needs
   let bal = +b.startBalance || 0, dip = bal;
   const soon = addDays(today(), 95);
   checks.forEach(c=>{
-    if(c.date > soon) return;
     bal += c.left;
     c.balance = bal;
-    if(bal < dip) dip = bal;
+    if(c.date <= soon && bal < dip) dip = bal;
+    // "dry" should mean you actually run out, not merely that one check leans on
+    // the cushion sitting in your account
+    c.dry = c.left < -0.5 && bal < -0.5;
+    c.covered = c.left < -0.5 && bal >= -0.5;
   });
-  return { checks: checks.filter(c=>!c.partial), occs, goals, goalTotal, allowance, unfunded, per,
-           buffer: Math.max(0, -dip) };
+  const shown = checks.filter(c=>!c.partial);
+  // average monthly flow into each flexible goal, for the tabs that need a rate
+  const flexAvg = {};
+  if(shown.length){
+    shown.forEach(c=> (c.flex||[]).forEach(f=>{ flexAvg[f.id] = (flexAvg[f.id]||0) + f.amount; }));
+    Object.keys(flexAvg).forEach(k=>{ flexAvg[k] = flexAvg[k] / shown.length * per / 12; });
+  }
+  return { checks: shown, occs, goals, goalTotal, allowance, debtExtra, flexGoals, flexAvg,
+           keepBack, unfunded, per, buffer: Math.max(0, -dip) };
 }
 
 /* ============================================================
@@ -656,7 +704,7 @@ function buildPlan(b){
 function debtList(b){
   return (b.expenses||[]).filter(e=> e.cat==="creditcard" || e.cat==="loan")
     .map(e=>({ id:e.id, name:e.name, cat:e.cat, balance:+e.balance||0, apr:+e.apr||0,
-               min:monthlyCost(e) }))
+               min:monthlyCost(e), offBudget:!!e.offBudget, left:+e.paymentsLeft||0 }))
     .filter(d=> d.balance>0);
 }
 function simulate(debts, extra, method){
@@ -702,16 +750,25 @@ function debtSummary(b, plan){
   const debts = debtList(b);
   const totalBal = debts.reduce((s,d)=>s+d.balance,0);
   const totalMin = debts.reduce((s,d)=>s+d.min,0);
+  const offMin   = debts.filter(d=>d.offBudget).reduce((s,d)=>s+d.min,0);
   const wApr = totalBal>0 ? debts.reduce((s,d)=>s+d.apr*d.balance,0)/totalBal : 0;
-  const billsM = (b.expenses||[]).reduce((s,e)=>s+monthlyCost(e),0);
+  const billsM = (b.expenses||[]).filter(onBudget).reduce((s,e)=>s+monthlyCost(e),0);
   const allowM = allowanceTotal(b)*plan.per/12;
-  const savM = (b.goals||[]).filter(g=>g.type==="savings").reduce((s,g)=>s+goalPerCheck(b,g)*plan.per/12,0);
+  const savM = (b.goals||[]).filter(g=>g.type==="savings" && !g.flex)
+    .reduce((s,g)=>s+goalPerCheck(b,g)*plan.per/12,0);
+  // what's spare before any extra debt payment is committed
   const avgLeft = monthlyIncome(b) - billsM - allowM - savM;
-  const goalExtra = (b.goals||[]).filter(g=>g.type==="debt")
+  // fixed debt payoff goals already send money above the minimums
+  const goalExtra = (b.goals||[]).filter(g=>g.type==="debt" && !g.flex)
     .reduce((s,g)=>s + goalPerCheck(b,g)*plan.per/12, 0);
-  const auto = Math.max(0, Math.round(avgLeft*0.75) + goalExtra);
-  const extra = b.debtExtra==null ? auto : +b.debtExtra;
-  return { debts, totalBal, totalMin, wApr, extra, auto, avgLeft, goalExtra };
+  // and a flexible one picks up whatever the checks could spare
+  const flexDebt = (b.goals||[]).filter(g=>g.flex && g.type==="debt")
+    .reduce((s,g)=>s + ((plan.flexAvg||{})[g.id]||0), 0);
+  const committed = +b.debtExtra || 0;      // reserved from every check, on top of goals
+  const headroom = Math.max(0, avgLeft - goalExtra - committed - flexDebt);
+  const extra = goalExtra + committed + flexDebt;   // total going in above the minimums
+  return { debts, totalBal, totalMin, offMin, wApr, extra, committed, flexDebt,
+           headroom, avgLeft, goalExtra };
 }
 
 /* ============================================================
@@ -754,13 +811,22 @@ function evenOut(b){
 function analyze(b, plan){
   const flags = [];
   const per = plan.per, inc = monthlyIncome(b);
-  const exp = (b.expenses||[]);
+  const exp = (b.expenses||[]).filter(onBudget);
   const sumCat = ids => exp.filter(e=>ids.includes(e.cat)).reduce((s,e)=>s+monthlyCost(e),0);
   const billsM = exp.reduce((s,e)=>s+monthlyCost(e),0);
   const allowM = allowanceTotal(b)*per/12;
-  const savingsM = (b.goals||[]).filter(g=>g.type==="savings").reduce((s,g)=>s+goalPerCheck(b,g)*per/12,0);
+  let savingsM = (b.goals||[]).filter(g=>g.type==="savings").reduce((s,g)=>s+goalPerCheck(b,g)*per/12,0);
   const debtGoalM = (b.goals||[]).filter(g=>g.type==="debt").reduce((s,g)=>s+goalPerCheck(b,g)*per/12,0);
-  const leftM = inc - billsM - allowM - savingsM - debtGoalM;
+  // what the flexible goals actually picked up, averaged over the planned checks
+  const cs = plan.checks || [];
+  const flexOf = t => cs.length
+    ? cs.reduce((s,c)=> s + (c.flex||[]).filter(f=>f.type===t).reduce((u,f)=>u+f.amount,0), 0)
+      / cs.length * per / 12
+    : 0;
+  const flexSaveM = flexOf("savings"), flexDebtM = flexOf("debt");
+  savingsM += flexSaveM;
+  const extraM = (+b.debtExtra || 0) + flexDebtM;
+  const leftM = inc - billsM - allowM - savingsM - debtGoalM - extraM;
   const pct = n => inc>0 ? n/inc*100 : 0;
   const add = (sev,title,val,why,fix,action) => flags.push({sev,title,val,why,fix,action});
 
@@ -791,9 +857,12 @@ function analyze(b, plan){
       act = { label:"Cut loose spending to "+money(cut)+" a check", act:"trimAllowance", to:cut };
     }
     add("crit","You're spending more than you earn", money(leftM)+"/mo",
-      "Bills, spending money and goal contributions add up to "+money(billsM+allowM+savingsM+debtGoalM)+" a month against "+money(inc)+" coming in. This gap gets covered by credit cards or overdrafts.",
+      "Bills, spending money, goals and extra debt payments add up to "+money(billsM+allowM+savingsM+debtGoalM+extraM)+" a month against "+money(inc)+" coming in. This gap gets covered by credit cards or overdrafts.",
       "Cut "+money(gap)+" a month, or stretch a goal timeline so it asks for less.", act);
   }
+  else if(flexSaveM + flexDebtM > 0) add("good","Every spare dollar has a job",
+    money(flexSaveM + flexDebtM)+"/mo",
+    "Your flexible goals pick up whatever each paycheck can spare — "+money(flexSaveM)+" to savings and "+money(flexDebtM)+" at your debts on an average month. Bills come first, so a heavy check simply contributes less instead of leaving you short.","");
   else if(leftM < inc*0.02) add("watch","Almost nothing left after the plan", money(leftM)+"/mo",
     "You're running at the edge. One unexpected car repair or medical copay puts you into a card.",
     "Aim to leave at least "+money(inc*0.05)+" a month unassigned as breathing room.");
@@ -829,9 +898,12 @@ function analyze(b, plan){
 
   // 4. savings rate
   const sPct = pct(savingsM);
-  if(savingsM<=0) add("crit","You're not saving anything", "0%",
+  if(savingsM<=0 && !(b.goals||[]).some(g=>g.flex)) add("crit","You're not saving anything", "0%",
     "With no savings line, any surprise expense becomes debt by default. This is the single most common reason budgets collapse.",
     "Start a goal in the Goals tab, even at "+money(Math.max(25, inc*0.02))+" a check. The habit matters more than the amount.");
+  else if(sPct<10 && flexDebtM > flexSaveM) add("good","Savings is light on purpose right now",
+    Math.round(sPct)+"% saving, "+money(flexDebtM)+"/mo at debt",
+    "Most of your spare money is going at balances rather than into savings, which is the right order while you owe at these rates. Once the debts clear, that "+money(flexDebtM)+" a month lands in savings instead without you changing anything.","");
   else if(sPct<10) add("watch","Savings rate is light", Math.round(sPct)+"%",
     "The usual target is 15-20% of pay across emergency fund and retirement. You're at "+Math.round(sPct)+"%.",
     "Another "+money(Math.max(25, inc*0.15 - savingsM))+" a month would get you to 15%. Stretching a goal's timeline is the painless way to find it.");
@@ -839,7 +911,8 @@ function analyze(b, plan){
   else add("good","Decent savings rate", Math.round(sPct)+"%","Above the 10% floor. Pushing toward 20% is the next step.","");
 
   // 5. emergency fund
-  const hasEF = (b.goals||[]).some(g=>g.type==="savings" && /emerg|rainy|buffer|cushion/i.test(g.name||""));
+  const hasEF = (b.goals||[]).some(g=>g.type==="savings" &&
+    (isFlex(g) || /emerg|rainy|buffer|cushion/i.test(g.name||"")));
   const monthlyNeed = billsM + allowM;
   if(!hasEF) add("watch","No emergency fund goal","3 months = "+money(monthlyNeed*3),
     "Before any other savings goal, most guidance says to bank three months of essential spending. Yours would be about "+money(monthlyNeed*3)+".",
@@ -930,7 +1003,7 @@ function analyze(b, plan){
     "A credit union personal loan or a balance transfer offer usually cuts this in half.");
 
   // 11. goal feasibility
-  (b.goals||[]).forEach(g=>{
+  (b.goals||[]).filter(g=>!isFlex(g)).forEach(g=>{
     const p = goalPerCheck(b,g);
     if(p > 0 && leftM < 0)
       add("watch","\""+g.name+"\" may be too aggressive", money(p)+"/check",
@@ -945,7 +1018,8 @@ function analyze(b, plan){
   let score = 100;
   flags.forEach(f=>{ if(f.sev==="crit") score-=18; else if(f.sev==="watch") score-=7; else score+=2; });
   score = clamp(Math.round(score), 5, 100);
-  return { flags, score, inc, billsM, allowM, savingsM, debtGoalM, leftM };
+  return { flags, score, inc, billsM, allowM, savingsM, debtGoalM, extraM, leftM,
+           flexSaveM, flexDebtM, hasFlex:(b.goals||[]).some(g=>g.flex) };
 }
 
 /* ============================================================
@@ -992,10 +1066,10 @@ function render(){
     $("topBig").textContent = money(ds.totalBal);
     $("topSub").innerHTML = ds.totalBal>0 ? `Minimums <b>${money(ds.totalMin)}/mo</b> · Average rate <b>${ds.wApr.toFixed(1)}%</b>` : "No card or loan balances entered";
   } else {
-    $("topLabel").textContent = "Unassigned each month";
-    $("topBig").textContent = money(a.leftM);
+    $("topLabel").textContent = a.hasFlex ? "Going to goals each month" : "Unassigned each month";
+    $("topBig").textContent = money(a.hasFlex ? (a.flexSaveM + a.flexDebtM) : a.leftM);
     $("topBig").style.color = a.leftM<0 ? "#F0A99B" : "#EAF1EB";
-    $("topSub").innerHTML = `Take-home <b>${money(a.inc)}</b> · Bills <b>${money(a.billsM)}</b> · Allowance <b>${money(a.allowM)}</b> · Goals <b>${money(a.savingsM + (a.debtGoalM||0))}</b>`;
+    $("topSub").innerHTML = `Take-home <b>${money(a.inc)}</b> · Bills <b>${money(a.billsM)}</b> · Spending <b>${money(a.allowM)}</b> · Goals <b>${money(a.savingsM + (a.debtGoalM||0))}</b>${a.extraM>0?` · Extra debt <b>${money(a.extraM)}</b>`:""}`;
   }
   renderTabs();
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));
@@ -1027,7 +1101,7 @@ function renderPlan(b){
   const maxLoad = Math.max(1, ...cs.map(c=>c.load));
   const eq = cs.slice(0,13).map((c,i)=>{
     const h = clamp(c.load/maxLoad*100, 5, 100);
-    const cls = c.dry ? "hot" : c.load > 0.93 ? "warm" : "";
+    const cls = c.dry ? "hot" : (c.covered || c.load > 0.93) ? "warm" : "";
     return `<button class="eq-col ${cls} ${openChecks[c.id]?'sel':''}" data-eq="${c.id}" aria-label="${fmtLong(c.date)}, ${Math.round(c.load*100)} percent used">
       <div class="eq-bar" style="height:${h}%"><div class="eq-fill" style="height:100%"></div></div>
       <small>${c.date.getDate()}</small></button>`;
@@ -1039,9 +1113,10 @@ function renderPlan(b){
   const lo = Math.min(...lefts), hi = Math.max(...lefts);
   const band = Math.abs(hi-lo) < 25 ? money(lo)+" every check"
              : money(lo)+" to "+money(hi);
+  const swept = cs.some(c=>c.flexTotal>0);
   el.innerHTML = `
     <div class="eq-wrap">
-      <div class="eq-head"><h3>What you keep after each check</h3><span class="num">${band}</span></div>
+      <div class="eq-head"><h3>${swept?"What each check spares for goals":"What you keep after each check"}</h3><span class="num">${swept?money(Math.min(...cs.map(c=>c.flexTotal)))+" to "+money(Math.max(...cs.map(c=>c.flexTotal))):band}</span></div>
       <div class="eq">${eq}</div>
       <div class="eq-legend"><span><i style="background:var(--pine)"></i>covered</span><span><i style="background:var(--amber)"></i>tight</span><span><i style="background:var(--clay)"></i>over</span></div>
     </div>
@@ -1104,6 +1179,17 @@ function checkCard(b,c){
       <span class="item-main"><span class="item-name">${esc(x.name)}</span><span class="item-sub">spending money, no due date</span></span>
       <span class="item-amt">${money(x.amount)}</span></button>`);
   });
+  (c.flex||[]).forEach(f=>{
+    rows.push(`<div class="item"><span class="tick" style="border-color:${f.type==="debt"?"var(--clay)":"var(--violet)"};background:${f.type==="debt"?"var(--clay)":"var(--violet)"};color:#fff">
+      <svg width="11" height="9" viewBox="0 0 11 9"><path d="M5.5 1v7M2 4.5h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+      <span class="item-main"><span class="item-name">${esc(f.name)}</span>
+        <span class="item-sub">${f.type==="debt"?"extra toward debt":"savings"} · what this check could spare${f.fills?" · finishes it":""}</span></span>
+      <span class="item-amt">${money(f.amount)}</span></div>`);
+  });
+  if(c.debtExtra>0) rows.push(`<div class="item"><span class="tick" style="border-color:var(--clay);background:var(--clay);color:#fff">
+    <svg width="11" height="9" viewBox="0 0 11 9"><path d="M2 4.5h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+    <span class="item-main"><span class="item-name">Extra toward debt</span><span class="item-sub">above the minimums, on your payoff plan</span></span>
+    <span class="item-amt">${money(c.debtExtra)}</span></div>`);
   if(c.free>0) rows.push(`<div class="item"><span class="tick" style="border-color:var(--steel);background:var(--steel);color:#fff">
     <svg width="11" height="9" viewBox="0 0 11 9"><circle cx="5.5" cy="4.5" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></span>
     <span class="item-main"><span class="item-name">Anything else</span><span class="item-sub">yours to use however you want</span></span>
@@ -1113,7 +1199,7 @@ function checkCard(b,c){
       <span><span class="check-when">${when}</span><span class="check-date">${fmtLong(c.date)}</span></span>
       <span style="display:flex;align-items:center;gap:10px">
         <span class="check-amt"><span class="in">${money(c.income)} in</span>
-          <span class="left ${c.left<0?'neg':''}">${money(c.left)} ${c.left<0?"short":"left"}</span></span>
+          <span class="left ${c.dry?'neg':''}">${money(c.left)} ${c.left<0?"short":"left"}</span></span>
         <svg class="chev" width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M1.5 1.5L6.5 6.5l-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
       </span>
     </button>
@@ -1122,18 +1208,33 @@ function checkCard(b,c){
       <span>Bills <b>${money(c.bills)}</b></span>
       ${c.sinkTotal>0?`<span>Set aside <b>${money(c.sinkTotal)}</b></span>`:""}
       ${c.goalTotal>0?`<span>Goals <b>${money(c.goalTotal)}</b></span>`:""}
+      ${c.debtExtra>0?`<span>Extra debt <b>${money(c.debtExtra)}</b></span>`:""}
+      ${c.flexTotal>0?`<span>Spare swept <b>${money(c.flexTotal)}</b></span>`:""}
       ${c.allowance>0?`<span>Spending <b>${money(c.allowance)}</b></span>`:""}
       <span>${Math.round(c.load*100)}% of this check</span>
+      ${c.covered?`<span style="color:var(--amber)">covered by your cushion</span>`:""}
     </div>
     <div class="check-body">${rows.length?rows.join(""):'<div class="empty-check">Nothing due from this check.</div>'}</div>
   </article>`;
 }
 
 /* ---------- Money ---------- */
+// a few sensible taps, scaled to the paycheck, always including whatever is set now
+function quickAmounts(b, current){
+  const pay = +b.pay.amount || 0;
+  const base = pay > 0 ? [0, 0.05, 0.10, 0.15, 0.20].map(f=>Math.round(pay*f/10)*10)
+                       : [0, 50, 100, 150, 200];
+  const set = Array.from(new Set(base.concat([Math.round(+current||0)])))
+    .filter(v=>v>=0).sort((x,y)=>x-y);
+  return set.slice(0, 5);
+}
+
 function renderBills(b){
   const per = payPerYear(b);
   const byCat = {};
-  b.expenses.forEach(e=>{ (byCat[e.cat] = byCat[e.cat]||[]).push(e); });
+  const mine = b.expenses.filter(onBudget);
+  const elsewhere = b.expenses.filter(e=>!onBudget(e));
+  mine.forEach(e=>{ (byCat[e.cat] = byCat[e.cat]||[]).push(e); });
   const order = CATS.map(c=>c.id).filter(id=>byCat[id]);
   const list = order.map(cid=>{
     const c = catOf(cid);
@@ -1142,11 +1243,12 @@ function renderBills(b){
         <span>${c.name}</span><span class="num" style="font-size:14px;color:var(--ink3)">${money(tot)}/mo</span></h2>
       <div class="card">${byCat[cid].map(e=>expenseRow(b,e)).join("")}</div>`;
   }).join("");
-  const split = b.expenses.filter(e=>e.sinking);
+  const split = mine.filter(e=>e.sinking);
   $("view-bills").innerHTML = `
-    ${b.expenses.length ? `<button class="add" style="margin-top:0" data-act="addExpense">+ Add a bill</button>` : ""}
+    ${mine.length ? `<button class="add" style="margin-top:0" data-act="addExpense">+ Add a bill</button>` : ""}
     ${list || `<div class="empty"><h4>No bills yet</h4><p>Add your fixed bills with their due dates. The plan builds itself from there, and re-decides every time you change something.</p><button class="btn" data-act="addExpense">Add a bill</button></div>`}
-    ${b.expenses.length ? `<button class="add" data-act="addExpense">+ Add a bill</button>` : ""}
+    ${mine.length ? `<button class="add" data-act="addExpense">+ Add a bill</button>` : ""}
+    ${elsewhere.length ? `<p class="sec-note" style="margin-top:18px">${elsewhere.map(e=>esc(e.name)).join(", ")} ${elsewhere.length>1?"are":"is"} paid from another account, so ${elsewhere.length>1?"they're":"it's"} not listed here. You'll find ${elsewhere.length>1?"them":"it"} on the Debt tab.</p>` : ""}
     ${split.length ? `<p class="sec-note" style="margin-top:18px">${split.map(e=>esc(e.name)).join(", ")} ${split.length===1?"is":"are"} set aside a piece at a time instead of coming out of one check. Tap a bill to change that, or anything else about it.</p>`
       : `<p class="sec-note" style="margin-top:18px">Tap any bill to change its amount, due date, frequency or category.</p>`}
     <div style="height:10px"></div>`;
@@ -1195,7 +1297,10 @@ function renderMoney(b){
         <span class="row-title">Anything else</span>
         <span class="num" style="font-size:22px" id="allowVal">${money(b.allowance||0)}</span></div>
       <div class="row-sub" style="margin-top:2px">Loose spending money on top of what you've earmarked.</div>
-      <input type="range" id="allowRange" min="0" max="${Math.max(200, Math.round((b.pay.amount||400)*0.6/10)*10)}" step="10" value="${b.allowance||0}">
+      <div class="amt-field"><div class="money-in">
+        <input type="number" inputmode="decimal" id="allowInput" step="1" value="${b.allowance||0}"></div></div>
+      <div class="quick">${quickAmounts(b, b.allowance||0).map(v=>
+        `<button data-act="setAllow" data-val="${v}" class="${(+b.allowance||0)===v?"on":""}">${money(v)}</button>`).join("")}</div>
     </div></div>
 
     <div class="toggle"><span class="toggle-txt">Carry leftovers forward<small>Money left on one check rolls into the next instead of vanishing</small></span>
@@ -1225,8 +1330,39 @@ const ordinal = n => n + (["th","st","nd","rd"][(n%100-20)%10] || ["th","st","nd
 /* ---------- Goals ---------- */
 function renderGoals(b){
   const per = payPerYear(b);
-  const sav = (b.goals||[]).filter(g=>g.type==="savings");
-  const dbt = (b.goals||[]).filter(g=>g.type==="debt");
+  const flex = (b.goals||[]).filter(g=>g.flex);
+  const fixed = (b.goals||[]).filter(g=>!g.flex);
+  const avg = PLAN.flexAvg || {};
+  const sav = fixed.filter(g=>g.type==="savings");
+  const dbt = fixed.filter(g=>g.type==="debt");
+
+  const flexCard = (g, i) => {
+    const room = goalRoom(b, g);
+    const rate = avg[g.id] || 0;
+    const perCheck = rate * 12 / per;
+    const amounts = PLAN.checks.map(c=>(c.flex.find(f=>f.id===g.id)||{}).amount||0);
+    const lo = amounts.length?Math.min(...amounts):0, hi = amounts.length?Math.max(...amounts):0;
+    const fillCheck = PLAN.checks.find(c=>c.flex.some(f=>f.id===g.id && f.fills));
+    const done = g.type==="savings" && (+g.target||0)>0
+      ? clamp((+g.saved||0)/(+g.target||1)*100,0,100) : 0;
+    return `<div class="goal">
+      <button data-act="editGoal" data-id="${g.id}" style="display:block;width:100%;text-align:left">
+        <span class="goal-top"><span>
+          <span class="goal-name">${esc(g.name)} <span class="pill" style="background:#EFEAF7;color:var(--violet)">flexible</span></span>
+          <span class="goal-when">${
+            g.type==="debt" ? "whatever's spare goes at your debts, in the payoff order"
+            : (+g.target||0)>0 ? "until "+money(g.target)+" is banked" : "no target, just keep feeding it"}</span></span>
+          <span class="goal-per"><b>${money(perCheck)}</b><small>a check, typically</small></span></span>
+        ${lo!==hi?`<span class="goal-foot" style="margin-top:11px"><span>ranges ${money(lo)} to ${money(hi)} depending on the check</span></span>`:""}
+        ${g.type==="savings"&&(+g.target||0)>0?`<span class="track"><span style="width:${done}%;background:var(--violet)"></span></span>
+          <span class="goal-foot"><span>${money(g.saved||0)} of ${money(g.target)}</span><span>${fillCheck?"full by "+fmtDate(fillCheck.date):(rate>0&&room<Infinity?Math.ceil(room/rate)+" months at this rate":"")}</span></span>`
+          :`<span class="goal-foot" style="margin-top:9px"><span>${money(rate)} a month at the current rate</span><span>${fillCheck?"clears "+fmtDate(fillCheck.date):""}</span></span>`}
+      </button>
+      <div style="display:flex;gap:8px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line2)">
+        <button class="row-sub" data-act="goalUp" data-id="${g.id}" ${i===0?"disabled style=\"opacity:.3;flex:1\"":'style="flex:1"'}>▲ higher priority</button>
+        <button class="row-sub" data-act="goalDown" data-id="${g.id}" ${i===flex.length-1?"disabled style=\"opacity:.3;flex:1\"":'style="flex:1"'}>▼ lower priority</button>
+      </div></div>`;
+  };
   const card = g => {
     const p = goalPerCheck(b,g);
     const done = g.type==="savings" ? clamp((+g.saved||0)/Math.max(1,+g.target||1)*100,0,100) : 0;
@@ -1243,32 +1379,82 @@ function renderGoals(b){
         <span class="goal-foot"><span>${money(p*per/12)} a month</span><span>flows into your Debt plan</span></span>`}
     </button>`;
   };
-  const totalPer = (b.goals||[]).reduce((s,g)=>s+goalPerCheck(b,g),0);
+  const fixedTotal = fixed.reduce((s,g)=>s+goalPerCheck(b,g),0);
+  const flexTotal = flex.reduce((s,g)=>s+(avg[g.id]||0),0);
+
   $("view-goals").innerHTML = `
     ${(b.goals||[]).length?`<div class="card" style="padding:15px 16px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-size:14px;font-weight:600">Coming out of every check</span>
-        <span class="num" style="font-size:22px">${money(totalPer)}</span></div>
-      <div class="row-sub" style="margin-top:3px">${money(totalPer*per/12)} a month across ${(b.goals||[]).length} goal${(b.goals||[]).length>1?"s":""} — already reflected in your Plan tab.</div>
+        <span style="font-size:14px;font-weight:600">Going to goals</span>
+        <span class="num" style="font-size:22px">${money(fixedTotal*per/12 + flexTotal)}</span></div>
+      <div class="row-sub" style="margin-top:3px">a month${fixedTotal>0&&flexTotal>0?` — ${money(fixedTotal*per/12)} committed, ${money(flexTotal)} from whatever's spare`:flexTotal>0?", all of it from whatever each check can spare":""}</div>
     </div>`:""}
-    <h2 class="sec">Savings goals</h2>
-    <p class="sec-note">Name it, set the amount and the deadline. The app works out what each paycheck has to contribute.</p>
-    ${sav.length? sav.map(card).join("") : `<div class="empty"><h4>No savings goals yet</h4><p>An emergency fund is the usual first one: three months of essential spending.</p><button class="btn" data-act="addGoal" data-type="savings">Add a savings goal</button></div>`}
-    ${sav.length?`<button class="add" data-act="addGoal" data-type="savings">+ Add a savings goal</button>`:""}
-    <h2 class="sec">Debt payoff goals</h2>
-    <p class="sec-note">Set a balance you want gone by a date. The contribution becomes extra money on top of minimums in your Debt plan.</p>
-    ${dbt.length? dbt.map(card).join("") : `<div class="empty"><h4>No payoff goals yet</h4><p>Pick a card or loan and give it a deadline.</p><button class="btn" data-act="addGoal" data-type="debt">Add a payoff goal</button></div>`}
-    ${dbt.length?`<button class="add" data-act="addGoal" data-type="debt">+ Add a payoff goal</button>`:""}
+
+    <h2 class="sec">Flexible goals</h2>
+    <p class="sec-note">No deadline and no fixed amount. Each paycheck pays its bills first, then whatever's left runs down this list in order until it's gone. A bill-heavy check simply gives less.</p>
+    ${flex.length ? flex.map(flexCard).join("")
+      : `<div class="empty"><h4>Let the app decide</h4>
+          <p>Tell it what matters and it works out how much each paycheck can spare, check by check. Nothing to calculate, and no goal that quietly breaks your budget.</p>
+          <button class="btn" data-act="autoGoals">Set this up for me</button></div>`}
+    ${flex.length?`<button class="add" data-act="addFlexGoal">+ Add a flexible goal</button>`:""}
+    ${flex.length?`<div class="card" style="margin-top:12px;padding:15px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="row-title">Keep back first</span>
+        <span class="num" style="font-size:20px" id="keepVal">${money(b.keepPerCheck||0)}</span></div>
+      <div class="row-sub" style="margin-top:2px">Held out of every check before any goal is fed, so there's always a little slack.</div>
+      <div class="amt-field"><div class="money-in">
+        <input type="number" inputmode="decimal" id="keepInput" step="1" value="${b.keepPerCheck||0}"></div></div>
+      <div class="quick">${[0,25,50,100,150].map(v=>
+        `<button data-act="setKeep" data-val="${v}" class="${(+b.keepPerCheck||0)===v?"on":""}">${money(v)}</button>`).join("")}</div>
+    </div>`:""}
+
+    <h2 class="sec">Fixed goals</h2>
+    <p class="sec-note">For anything with a real deadline. These take their amount before the flexible ones get a look in.</p>
+    ${sav.length||dbt.length ? [...sav,...dbt].map(card).join("")
+      : `<p class="sec-note" style="color:var(--ink3)">None set. Most people don't need any.</p>`}
+    <button class="add" data-act="addGoal" data-type="savings">+ Add a savings goal with a deadline</button>
+    <button class="add" data-act="addGoal" data-type="debt">+ Add a debt payoff goal with a deadline</button>
     <div style="height:10px"></div>`;
 }
 
 /* ---------- Debt ---------- */
+function debtRow(b, e){
+  const c = catOf(e.cat);
+  const bal = +e.balance||0, apr = +e.apr||0;
+  // never filled in is not the same thing as paid off
+  const missing = bal <= 0 && apr <= 0;
+  const cleared = bal <= 0 && !missing;
+  const left = +e.paymentsLeft||0;
+  let when = (e.freq||"monthly")==="monthly" ? "minimum "+money2(e.amount||0)+" on the "+ordinal(e.dueDay||1)
+             : "minimum "+money2(e.amount||0)+" "+((FREQS.find(f=>f.id===e.freq)||{}).name||"").toLowerCase();
+  if(left > 0) when = left+" payments of "+money2(e.amount||0)+" left";
+  if(e.offBudget) when += " · paid from another account";
+  return `<button class="row" data-act="editExpense" data-id="${e.id}">
+    <span class="swatch" style="background:${cleared?'var(--line)':c.color}"></span>
+    <span class="row-main"><span class="row-title">${esc(e.name)}
+      ${cleared?'<span class="pill" style="background:var(--pine-soft);color:var(--pine)">paid off</span>':""}</span>
+      <span class="row-sub">${missing ? "tap to add the balance and rate" : (cleared ? when : apr.toFixed(2).replace(/\.00$/,"")+"% APR · "+when)}</span></span>
+    <span class="row-amt">${missing?"—":money(bal)}<small>${missing?"not set":cleared?"cleared":"owed"}</small></span></button>`;
+}
 function renderDebt(b){
   const s = debtSummary(b, PLAN);
-  if(!s.debts.length){
+  const all = (b.expenses||[]).filter(e => e.cat==="creditcard" || e.cat==="loan");
+  const listing = all.length ? `
+    <div class="card">${all.map(e=>debtRow(b,e)).join("")}</div>
+    <button class="add" data-act="addExpense" data-cat="creditcard">+ Add another card or loan</button>` : "";
+  if(!all.length){
     $("view-debt").innerHTML = `<div class="empty"><h4>No debt entered</h4>
-      <p>Add a bill and choose the category Credit card debt or Loan payment. Include the balance and rate, and the payoff plan builds itself here.</p>
+      <p>Add each card or loan with its balance, rate and minimum payment. They show up in your bills too, and the payoff plan builds itself here.</p>
       <button class="btn" data-act="addExpense" data-cat="creditcard">Add a card or loan</button></div>`;
+    return;
+  }
+  if(!s.debts.length){
+    const blank = all.filter(e => (+e.balance||0) <= 0 && (+e.apr||0) <= 0);
+    $("view-debt").innerHTML = `${listing}
+      ${blank.length ? `<div class="flag watch" style="margin-top:14px"><h4>Needs a balance and a rate</h4>
+        <p>${blank.map(e=>esc(e.name)).join(", ")} ${blank.length>1?"are":"is"} being paid as a bill, but without the balance owed and the interest rate there's nothing to build a payoff plan from. Tap ${blank.length>1?"each one":"it"} above to fill those in.</p></div>`
+      : `<div class="flag good" style="margin-top:14px"><h4>Nothing left to pay down</h4>
+        <p>Every card and loan here has a zero balance. If that's right, remove the payments under Bills so the plan stops holding money back for them.</p></div>`}`;
     return;
   }
   const snow = simulate(s.debts, s.extra, "snowball");
@@ -1294,16 +1480,30 @@ function renderDebt(b){
       <div class="row-sub" style="margin-top:6px;color:var(--ink2)">${name==="Avalanche"?"Highest interest rate first":"Smallest balance first"}</div>
     </div>`;
   $("view-debt").innerHTML = `
+    ${listing}
+    ${s.offMin>0?`<p class="sec-note" style="margin-top:14px">${money(s.offMin)} a month of these minimums comes out of another account, so it isn't taken from these paychecks. It's still counted in the payoff maths below.</p>`:""}
+    <h2 class="sec">Paying it down</h2>
+    <p class="sec-note">Your minimums are already covered — ${money(s.totalMin - s.offMin)} a month sits in your bills${s.offMin>0?" and "+money(s.offMin)+" comes from elsewhere":""}. This is only about what goes in on top.</p>
     <div class="card" style="padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-        <span style="font-weight:600;font-size:15px">Extra you can put toward debt</span>
-        <span class="num" style="font-size:22px" id="extraVal">${money(s.extra)}</span></div>
-      <div class="row-sub">On top of ${money(s.totalMin)} in minimums. Your plan leaves about ${money(s.avgLeft)} a month unassigned${s.goalExtra>0?`, plus ${money(s.goalExtra)} from your payoff goals`:""}.</div>
-      <input type="range" id="extraRange" min="0" max="${Math.max(200, Math.round((s.avgLeft+s.goalExtra+200)/50)*50)}" step="10" value="${Math.round(s.extra)}">
-      <button class="row-sub" data-act="resetExtra" style="color:var(--pine);font-weight:600;padding:2px 0">Reset to what the budget allows</button>
+        <span style="font-weight:600;font-size:15px">Extra above the minimums</span>
+        <span class="num" style="font-size:22px">${money(s.committed)}</span></div>
+      <div class="row-sub">Reserved from every paycheck, on top of what's already budgeted.
+        ${s.headroom>0?`You have about ${money(s.headroom)} a month spare to draw on.`
+          :`Your budget has nothing spare right now, so anything here has to come from somewhere else.`}</div>
+      <div class="amt-field"><div class="money-in">
+        <input type="number" inputmode="decimal" id="extraInput" step="1" value="${Math.round(s.committed)}"></div></div>
+      <div class="quick">${Array.from(new Set([0,25,50,100,Math.round(s.headroom+s.committed)]))
+        .filter(v=>v>=0).sort((x,y)=>x-y).slice(0,5).map(v=>
+        `<button data-act="setExtra" data-val="${v}" class="${Math.round(s.committed)===v?"on":""}">${v===Math.round(s.headroom+s.committed)&&v>0?"All spare":money(v)}</button>`).join("")}</div>
+      ${s.goalExtra>0?`<div class="row-sub" style="margin-top:6px;color:var(--violet)">Your debt payoff goals already add ${money(s.goalExtra)} a month on top of this.</div>`:""}
+      <div class="row-sub" style="margin-top:8px;padding-top:9px;border-top:1px solid var(--line2)">
+        Going in above the minimums: <b class="num">${money(s.extra)}</b> a month</div>
     </div>
+    ${s.extra<=0?`<div class="flag watch" style="margin-top:12px"><h4>Nothing extra going in</h4>
+      <p>At minimums only, these balances clear on the creditors' schedule and you pay the most interest possible. Even ${money(25)} a month above the minimums shortens it.</p></div>`:""}
     <h2 class="sec">Two ways to do it</h2>
-    <p class="sec-note">Same money, different order. Here's what each costs you.</p>
+    <p class="sec-note">Same extra money, different order. Here's what each costs you, minimums included.</p>
     ${strat("Avalanche", aval, valid && rec==="avalanche")}
     ${strat("Snowball", snow, valid && rec==="snowball")}
     ${valid?`<div class="flag good" style="margin-top:12px"><h4>Why ${rec}</h4><p>${why}</p></div>`
@@ -1317,8 +1517,8 @@ function renderDebt(b){
         <span class="row-main"><span class="row-title">${i+1}. ${esc(d.name)}</span>
           <span class="row-sub">${money(debtList(b).find(x=>x.id===d.id).balance)} at ${d.apr}% · minimum ${money(d.min)}</span></span>
         <span class="row-amt">${d.paidMonth?payoffDate(d.paidMonth):"—"}<small>paid off</small></span></div>`).join("")}</div>
-    <div class="flag good" style="margin-top:12px"><h4>Focus here first<em>${money(s.extra + (R.order[0]?R.order[0].min:0))}/mo</em></h4>
-      <p>Send ${money(s.extra)} extra to ${esc(R.order[0].name)} on top of its ${money(R.order[0].min)} minimum. It clears ${R.order[0].paidMonth?"in "+R.order[0].paidMonth+" month"+(R.order[0].paidMonth>1?"s":""):"first"}, and its payment then rolls onto the next one.</p></div>
+    <div class="flag good" style="margin-top:12px"><h4>Send the extra here<em>${money(s.extra)}/mo</em></h4>
+      <p>All of your extra goes to <b>${esc(R.order[0].name)}</b>, on top of the ${money(R.order[0].min)} minimum that's already handled. It clears ${R.order[0].paidMonth?"in "+R.order[0].paidMonth+" month"+(R.order[0].paidMonth>1?"s":""):"first"}, and once it's gone its minimum rolls onto the next one down the list without you finding any more money.</p></div>
     ${(()=>{ const di = O.interest-R.interest, dm = O.months-R.months, other = rec==="avalanche"?"snowball":"avalanche";
       const timing = dm===0 ? "finishes the same month" : `finishes ${Math.abs(dm)} month${Math.abs(dm)===1?"":"s"} ${dm>0?"later":"sooner"}`;
       const cost = Math.abs(di) < 1 ? "costs the same in interest" : `${di>0?"costs":"saves"} ${money(Math.abs(di))} in interest`;
@@ -1440,18 +1640,41 @@ function setPaid(b, occ, on, actualBalance){
   return null;
 }
 const goalKey = (gid, checkId) => "goal:" + gid + "@" + checkId;
-function setGoalPaid(b, gid, checkId, amount, on){
+// where a flexible "attack my debt" contribution actually lands: the priciest balance
+function nextDebtTarget(b){
+  const live = (b.expenses||[])
+    .filter(e => (e.cat==="creditcard"||e.cat==="loan") && (+e.balance||0) > 0)
+    .sort((x,y)=> (+y.apr||0)-(+x.apr||0) || (+x.balance||0)-(+y.balance||0));
+  return live[0] || null;
+}
+function setGoalPaid(b, gid, checkId, amount, on, targetEid){
   b.paid = b.paid || {};
   const key = goalKey(gid, checkId);
   const g = (b.goals||[]).find(x=>x.id===gid);
   if(!g) return;
   if(on){
     if(b.paid[key]) return;
-    if(g.type==="savings") g.saved = Math.round(((+g.saved||0) + (+amount||0))*100)/100;
-    b.paid[key] = { on:true, goal:gid, amount:+amount||0, at:iso(today()) };
+    let delta = 0;
+    if(g.type==="savings"){
+      g.saved = Math.round(((+g.saved||0) + (+amount||0))*100)/100;
+    } else if(targetEid){
+      // extra money above the minimum comes straight off that balance
+      const e = (b.expenses||[]).find(x=>x.id===targetEid);
+      if(e){
+        const before = +e.balance||0;
+        const after = Math.round(Math.max(0, before - (+amount||0))*100)/100;
+        delta = Math.round((after - before)*100)/100;
+        e.balance = after;
+      }
+    }
+    b.paid[key] = { on:true, goal:gid, amount:+amount||0, eid:targetEid, delta, at:iso(today()) };
   } else {
     const r = paidRec(b, key);
     if(r && g.type==="savings") g.saved = Math.max(0, Math.round(((+g.saved||0) - (+r.amount||0))*100)/100);
+    if(r && r.delta && r.eid){
+      const e = (b.expenses||[]).find(x=>x.id===r.eid);
+      if(e) e.balance = Math.max(0, Math.round(((+e.balance||0) - r.delta)*100)/100);
+    }
     delete b.paid[key];
   }
 }
@@ -1467,9 +1690,16 @@ function snapshot(b, plan){
   plan.checks.slice(0,2).forEach(c=>{
     if(b.log[c.id]) return;                       // already confirmed, leave it alone
     const snap = {
-      date: iso(c.date), income: c.income, allowance: c.allowance,
+      date: iso(c.date), income: c.income, allowance: c.allowance, debtExtra: c.debtExtra||0,
       items: c.items.map(o=>({ key:o.key, eid:o.eid, name:o.name, cat:o.cat, amount:o.amount, due:iso(o.due) })),
-      goals: (c.goals||[]).filter(g=>g.per>0).map(g=>({ id:g.id, name:g.name, type:g.type, amount:g.per })),
+      goals: [
+        ...(c.goals||[]).filter(g=>g.per>0).map(g=>({ id:g.id, name:g.name, type:g.type, amount:g.per })),
+        ...(c.flex||[]).map(f=>{
+          const t = f.type==="debt" ? nextDebtTarget(b) : null;
+          return { id:f.id, name:f.name, type:f.type, amount:f.amount,
+                   targetEid: t?t.id:undefined, targetName: t?t.name:undefined };
+        })
+      ],
       sink: c.sinking.map(x=>({ name:x.name, amount:x.amount })),
       expected: c.left
     };
@@ -1524,7 +1754,8 @@ function drawCheckin(){
     return row(o.key, o.name, sub, o.amount, extra);
   }).join("");
   const goals = s.goals.map(g=>row(goalKey(g.id, CI.id), g.name,
-    g.type==="savings" ? "into savings" : "extra toward debt", g.amount)).join("");
+    g.type==="savings" ? "into savings"
+      : (g.targetName ? "extra toward "+esc(g.targetName) : "extra toward debt"), g.amount)).join("");
   const sink = s.sink.length ? `<div class="row"><span class="row-main">
       <span class="row-title">${s.sink.map(x=>esc(x.name)).join(", ")} set aside</span>
       <span class="row-sub">stays in checking until it's due</span></span>
@@ -1578,7 +1809,8 @@ function confirmCheckin(){
     if(on) setPaid(b, o, true, bals[o.eid]);
     else setPaid(b, o, false);
   });
-  s.goals.forEach(g=> setGoalPaid(b, g.id, CI.id, g.amount, !!CI.ticks[goalKey(g.id, CI.id)]));
+  s.goals.forEach(g=> setGoalPaid(b, g.id, CI.id, g.amount,
+    !!CI.ticks[goalKey(g.id, CI.id)], g.targetEid));
   b.log = b.log || {};
   const expected = s.expected + (+b.startBalance||0);
   const rec = { at: iso(today()), expected };
@@ -1746,10 +1978,11 @@ function applyShare(mode){
    Sheets
    ============================================================ */
 let sheetSave = null;
-function openSheet(title, body, footLabel, onSave){
+function openSheet(title, body, footLabel, onSave, danger){
   $("sheetTitle").textContent = title;
   $("sheetBody").innerHTML = body;
-  $("sheetFoot").innerHTML = footLabel ? `<button class="btn" id="sheetSaveBtn">${footLabel}</button>` : "";
+  $("sheetFoot").innerHTML = footLabel
+    ? `<button class="btn${danger?" wreck":""}" id="sheetSaveBtn">${footLabel}</button>` : "";
   sheetSave = onSave || null;
   $("scrim").classList.add("on"); $("sheet").classList.add("on");
   $("sheetBody").scrollTop = 0;
@@ -1808,7 +2041,12 @@ function expenseForm(id, presetCat){
         <label class="f"><span>Balance owed</span><div class="money-in"><input type="number" inputmode="decimal" id="exBal" value="${e.balance||""}" step="0.01"></div></label>
         <label class="f"><span>Interest rate</span><input type="number" inputmode="decimal" id="exApr" value="${e.apr||""}" step="0.01" placeholder="%"></label>
       </div>
-      <div class="hint">These two feed the Debt tab. The amount above is treated as your minimum payment.</div>
+      <label class="f"><span>Payments left</span>
+        <input type="number" inputmode="numeric" id="exLeft" value="${e.paymentsLeft||""}" step="1" placeholder="leave blank if it's open-ended">
+        <div class="hint" id="planHint">For a payment plan with a set number of instalments. Leave the balance blank and it'll work it out from this.</div></label>
+      <div class="toggle"><span class="toggle-txt">Minimum paid from another account<small>Keeps it out of these paychecks and out of your bills, but still counted in the payoff plan. Anything you pay above the minimum still comes from here</small></span>
+        <button type="button" class="sw ${e.offBudget?"on":""}" id="swOff" aria-pressed="${!!e.offBudget}"></button></div>
+      <div class="hint">The amount above is treated as the minimum payment.</div>
     </div>
     <label class="f"><span>How often</span>
       <select id="exFreq">${FREQS.map(f=>`<option value="${f.id}" ${e.freq===f.id?"selected":""}>${f.name}</option>`).join("")}</select></label>
@@ -1833,11 +2071,16 @@ function expenseForm(id, presetCat){
         freq:val("exFreq"), dueDay:+val("exDueDay")||1, dueDate:val("exDueDate")||iso(addDays(today(),14)),
         sinking:$("swSink").classList.contains("on"), autopay:$("swAuto").classList.contains("on"),
         splitManual: sinkTouched ? true : (e.splitManual || false),
-        balance:numv("exBal"), apr:numv("exApr") };
+        balance:numv("exBal"), apr:numv("exApr"),
+        paymentsLeft: Math.max(0, Math.round(numv("exLeft"))) || 0,
+        offBudget: $("swOff").classList.contains("on") };
+      // a payment plan tells us the balance if you didn't
+      if(!o.balance && o.paymentsLeft > 0) o.balance = Math.round(o.paymentsLeft * o.amount * 100)/100;
       const i = b2.expenses.findIndex(x=>x.id===id);
       if(i>=0) b2.expenses[i]=o; else b2.expenses.push(o);
       save(); closeSheet(); render();
-      toast(i>=0 ? "Updated — plan rebalanced" : "Added — plan rebalanced");
+      toast(o.offBudget ? "Saved — kept out of these paychecks"
+                        : (i>=0 ? "Updated — plan rebalanced" : "Added — plan rebalanced"));
     });
   $("catChips").addEventListener("click", ev=>{
     const c = ev.target.closest(".chip"); if(!c) return;
@@ -1850,6 +2093,14 @@ function expenseForm(id, presetCat){
   // a bill too big to sit on one check should offer to split before you save it
   let sinkTouched = false;
   $("swSink").addEventListener("click", ()=>{ sinkTouched = true; $("sinkHint").textContent = ""; });
+  const planLine = ()=>{
+    const n = Math.round(numv("exLeft")), amt = numv("exAmount");
+    if(n>0 && amt>0 && $("planHint")) $("planHint").textContent =
+      n+" payments of "+money2(amt)+" is "+money(n*amt)+" left to pay, done in "+
+      fmtMY(addMonths(today(), n))+".";
+  };
+  ["exLeft","exAmount"].forEach(i=>{ const el=$(i); if(el) el.addEventListener("input", planLine); });
+  planLine();
   const reflectAuto = ()=>{
     if(sinkTouched || (e.splitManual && id)) return;
     const pay = +B().pay.amount || 0;
@@ -1906,42 +2157,94 @@ function bucketForm(id){
   $("bkAmt").addEventListener("input", upd); upd();
 }
 
-function goalForm(id, type){
+function goalForm(id, type, flexNew){
   const b = B();
-  const g = (b.goals||[]).find(x=>x.id===id) || { name:"", target:"", months:12, saved:0, type:type||"savings", apr:"" };
+  const g = (b.goals||[]).find(x=>x.id===id) ||
+            { name:"", target:"", months:12, saved:0, type:type||"savings", apr:"", flex:!!flexNew };
   const isDebt = g.type==="debt";
-  openSheet(id?"Edit goal":(isDebt?"Debt payoff goal":"Savings goal"), `
-    <label class="f"><span>Name</span><input type="text" id="glName" value="${esc(g.name)}" placeholder="${isDebt?"Pay off Chase card":"Emergency fund"}"></label>
-    <label class="f"><span>${isDebt?"Balance to clear":"Target amount"}</span>
-      <div class="money-in"><input type="number" inputmode="decimal" id="glTarget" value="${g.target||""}" step="0.01" placeholder="5000"></div></label>
-    ${isDebt?`<label class="f"><span>Interest rate</span><input type="number" inputmode="decimal" id="glApr" value="${g.apr||""}" step="0.01" placeholder="%">
-      <div class="hint">Used so the timeline accounts for interest as you pay it down.</div></label>`
-      :`<label class="f"><span>Already saved</span><div class="money-in"><input type="number" inputmode="decimal" id="glSaved" value="${g.saved||0}" step="0.01"></div></label>`}
-    <label class="f"><span>Timeframe</span>
-      <div style="display:flex;align-items:baseline;justify-content:space-between">
-        <span class="num" style="font-size:22px" id="glMonthsLbl">${g.months} months</span>
-        <span class="row-sub" id="glPerLbl"></span></div>
-      <input type="range" id="glMonths" min="1" max="60" step="1" value="${g.months||12}">
-      <div class="hint">Drag to see what each paycheck would have to contribute.</div></label>
+  const flexMode = !!g.flex;
+  openSheet(id ? "Edit goal" : (flexMode ? "Flexible goal" : (isDebt?"Debt payoff goal":"Savings goal")), `
+    <label class="f"><span>What is it for</span>
+      <input type="text" id="glName" value="${esc(g.name)}" placeholder="${isDebt?"Attack my debt":"Emergency fund"}"></label>
+    <label class="f"><span>Kind</span>
+      <div class="seg" id="glKind">
+        <button type="button" data-kind="savings" class="${!isDebt?"on":""}">Save it</button>
+        <button type="button" data-kind="debt" class="${isDebt?"on":""}">Pay down debt</button>
+      </div></label>
+    <label class="f"><span>How it's funded</span>
+      <div class="seg" id="glMode">
+        <button type="button" data-mode="flex" class="${flexMode?"on":""}">Whatever's spare</button>
+        <button type="button" data-mode="fixed" class="${!flexMode?"on":""}">A set amount</button>
+      </div>
+      <div class="hint" id="glModeHint"></div></label>
+
+    <div id="glFlexBox" style="display:${flexMode?"block":"none"}">
+      <label class="f"><span>Stop at${g.type==="debt"?"":" (optional)"}</span>
+        <div class="money-in"><input type="number" inputmode="decimal" id="glCap" value="${flexMode?(g.target||""):""}" step="0.01" placeholder="leave blank for no limit"></div>
+        <div class="hint" id="glCapHint">Once this much is banked, the money moves on to the next goal down the list.</div></label>
+    </div>
+
+    <div id="glFixedBox" style="display:${flexMode?"none":"block"}">
+      <label class="f"><span>${isDebt?"Balance to clear":"Target amount"}</span>
+        <div class="money-in"><input type="number" inputmode="decimal" id="glTarget" value="${!flexMode?(g.target||""):""}" step="0.01" placeholder="5000"></div></label>
+      ${isDebt?`<label class="f"><span>Interest rate</span><input type="number" inputmode="decimal" id="glApr" value="${g.apr||""}" step="0.01" placeholder="%"></label>`
+        :`<label class="f"><span>Already saved</span><div class="money-in"><input type="number" inputmode="decimal" id="glSaved" value="${g.saved||0}" step="0.01"></div></label>`}
+      <label class="f"><span>Timeframe</span>
+        <select id="glMonths">${[3,6,9,12,18,24,30,36,48,60].concat(
+          [3,6,9,12,18,24,30,36,48,60].includes(+g.months||12)?[]:[+g.months||12])
+          .sort((x,y)=>x-y).map(m=>`<option value="${m}" ${(+g.months||12)===m?"selected":""}>${m} months${m%12===0?" ("+(m/12)+" year"+(m/12>1?"s":"")+")":""}</option>`).join("")}</select>
+        <div class="hint" id="glPerLbl"></div></label>
+    </div>
     ${id?`<button class="btn danger" style="margin-top:20px" data-act="delGoal" data-id="${id}">Delete goal</button>`:""}`,
     "Save", ()=>{
-      const b2=B();
-      const o = { id:id||uid(), type:g.type, name:val("glName")|| (g.type==="debt"?"Payoff goal":"Savings goal"),
+      const b2 = B();
+      const kind = $("glKind").querySelector(".on").dataset.kind;
+      const mode = $("glMode").querySelector(".on").dataset.mode;
+      const isF = mode === "flex";
+      const o = { id:id||uid(), type:kind, flex:isF,
+        name: val("glName") || (isF ? (kind==="debt"?"Attack my debt":"Savings") : (kind==="debt"?"Payoff goal":"Savings goal")),
         start: g.start || iso(today()),
-        target:numv("glTarget"), months:+val("glMonths")||12,
-        saved: g.type==="savings" ? numv("glSaved") : 0, apr: g.type==="debt" ? numv("glApr") : 0 };
+        target: isF ? numv("glCap") : numv("glTarget"),
+        months: isF ? 0 : (+val("glMonths")||12),
+        saved: kind==="savings" ? (isF ? (+g.saved||0) : numv("glSaved")) : 0,
+        apr: kind==="debt" && !isF ? numv("glApr") : 0 };
       b2.goals = b2.goals||[];
       const i = b2.goals.findIndex(x=>x.id===id);
       if(i>=0) b2.goals[i]=o; else b2.goals.push(o);
-      save(); closeSheet(); render(); toast("Goal saved — it's in your plan now");
+      save(); closeSheet(); render();
+      toast(isF ? "Saved — it'll take what each check can spare" : "Goal saved — it's in your plan now");
     });
-  const upd = ()=>{
-    const months = +val("glMonths");
-    $("glMonthsLbl").textContent = months + (months===1?" month":" months");
-    const tmp = { type:g.type, target:numv("glTarget"), saved: g.type==="savings"?numv("glSaved"):0, months, apr:numv("glApr") };
-    $("glPerLbl").textContent = money(goalPerCheck(B(), tmp)) + " per check";
+
+  const modeHint = ()=>{
+    const isF = $("glMode").querySelector(".on").dataset.mode === "flex";
+    $("glFlexBox").style.display = isF ? "block" : "none";
+    $("glFixedBox").style.display = isF ? "none" : "block";
+    $("glModeHint").textContent = isF
+      ? "It takes whatever's left after bills and spending money, so it never breaks a paycheck. Order the flexible goals to say what gets fed first."
+      : "A set amount comes out of every check whether or not the check can afford it. Use this only when there's a real deadline.";
   };
-  ["glMonths","glTarget","glSaved","glApr"].forEach(i=>{ const el=$(i); if(el) el.addEventListener("input", upd); });
+  $("glMode").addEventListener("click", ev=>{
+    const btn = ev.target.closest("[data-mode]"); if(!btn) return;
+    $("glMode").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+    btn.classList.add("on"); modeHint();
+  });
+  $("glKind").addEventListener("click", ev=>{
+    const btn = ev.target.closest("[data-kind]"); if(!btn) return;
+    $("glKind").querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+    btn.classList.add("on");
+    if($("glCapHint")) $("glCapHint").textContent = btn.dataset.kind==="debt"
+      ? "Leave blank to keep going until every balance is cleared."
+      : "Once this much is banked, the money moves on to the next goal down the list.";
+  });
+  modeHint();
+  const upd = ()=>{
+    if(!$("glMonths")) return;
+    const months = +val("glMonths");
+    const tmp = { type:g.type, target:numv("glTarget"), saved: g.type==="savings"?numv("glSaved"):0, months, apr:numv("glApr") };
+    $("glPerLbl").textContent = "That works out to " + money(goalPerCheck(B(), tmp)) + " from every paycheck.";
+  };
+  ["glMonths","glTarget","glSaved","glApr"].forEach(i=>{ const el=$(i); if(el){
+    el.addEventListener("input", upd); el.addEventListener("change", upd); } });
   upd();
 }
 function itemSheet(key, checkId){
@@ -1971,6 +2274,15 @@ function itemSheet(key, checkId){
       closeSheet(); render();
     });
 }
+/* iOS suppresses window.confirm() in a home-screen app, so anything destructive
+   asks in the sheet instead. */
+function askConfirm(title, body, label, onYes){
+  openSheet(title, `
+    <p style="margin:16px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink2)">${body}</p>
+    <button class="btn ghost" style="margin-top:20px" data-act="closeSheet">Keep it</button>`,
+    label, ()=>{ closeSheet(); onYes(); }, true);
+}
+
 /* Every suggestion in the Health tab can apply itself, but never silently:
    this spells out the before and after first. */
 function askFix(fx){
@@ -2139,10 +2451,14 @@ function drawOb(){
     body = `<div class="ob-step">Step 3 of 4</div><h1>How much stays yours?</h1>
       <p>Set aside spending money from every check before anything else gets planned. Budgets without this rarely survive.</p>
       <div class="card" style="padding:16px;margin-top:18px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline">
-          <span class="row-title">Per paycheck</span><span class="num" style="font-size:24px" id="obAllowVal">${money(b.allowance)}</span></div>
-        <input type="range" id="obAllow" min="0" max="${Math.max(200, Math.round((b.pay.amount||400)*0.6/10)*10)}" step="10" value="${b.allowance}">
-        <div class="row-sub" id="obAllowSub">${money(b.allowance*per/12)} a month</div>
+        <div class="row-title">Per paycheck</div>
+        <div class="amt-field"><div class="money-in">
+          <input type="number" inputmode="decimal" id="obAllow" step="1" value="${b.allowance||""}" placeholder="0"></div></div>
+        <div class="quick">${(b.pay.amount>0
+            ? [0,0.05,0.10,0.15,0.20].map(f=>Math.round(b.pay.amount*f/10)*10)
+            : [0,50,100,150,200]).map(v=>
+          `<button data-ob-allow="${v}" class="${(+b.allowance||0)===v?"on":""}">${money(v)}</button>`).join("")}</div>
+        <div class="row-sub" style="margin-top:10px" id="obAllowSub">${money((b.allowance||0)*per/12)} a month</div>
       </div>`;
   } else if(s===4){
     body = `<div class="ob-step">Step 4 of 4</div><h1>What are you working toward?</h1>
@@ -2161,10 +2477,18 @@ function drawOb(){
     </div></div></div></div>`;
   if(s===3){
     const per = payPerYear(ob.b);
-    $("obAllow").addEventListener("input", ev=>{
-      ob.b.allowance = +ev.target.value;
-      $("obAllowVal").textContent = money(ob.b.allowance);
-      $("obAllowSub").textContent = money(ob.b.allowance*per/12) + " a month";
+    const showAllow = ()=>{
+      $("obAllowSub").textContent = money((ob.b.allowance||0)*per/12) + " a month";
+      $("obRoot").querySelectorAll("[data-ob-allow]").forEach(el=>
+        el.classList.toggle("on", (+el.dataset.obAllow) === (+ob.b.allowance||0)));
+    };
+    $("obAllow").addEventListener("input", ev=>{ ob.b.allowance = +ev.target.value||0; showAllow(); });
+    $("obRoot").querySelectorAll("[data-ob-allow]").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        ob.b.allowance = +el.dataset.obAllow;
+        $("obAllow").value = ob.b.allowance;
+        showAllow();
+      });
     });
   }
   if(s===4){
@@ -2215,6 +2539,7 @@ function drawOb(){
   if($("obBack")) $("obBack").addEventListener("click", ()=>{ collectOb(); ob.step--; drawOb(); });
   $("obNextBtn").addEventListener("click", ()=>{
     collectOb();
+    if(ob.step===3) ob.b.allowance = Math.max(0, +val("obAllow")||0);
     if(ob.step===1 && !ob.b.pay.amount){ toast("Enter what you take home first"); return; }
     if(ob.step===4){
       store.budgets.push(ob.b); store.activeId = ob.b.id; store.seenIntro = true; save();
@@ -2228,7 +2553,7 @@ function collectOb(){
   const s = ob.step, b = ob.b;
   if(s===1){ b.pay.amount = parseFloat(val("obAmt"))||0; b.pay.freq = val("obFreq");
     b.pay.next = val("obNext")||b.pay.next; b.startBalance = parseFloat(val("obStart"))||0; }
-  if(s===3){ b.allowance = +val("obAllow")||0; }
+  if(s===3){ b.allowance = Math.max(0, +val("obAllow")||0); }
   if(s===4){ const n = val("obGName").trim(), t = parseFloat(val("obGTarget"))||0;
     if(t>0) b.goals=[{ id:uid(), type:"savings", name:n||"Emergency fund", target:t,
       months:+val("obGMonths")||12, saved:0, start:iso(today()) }]; }
@@ -2265,23 +2590,72 @@ document.addEventListener("click", ev=>{
     case "editPay": payForm(); break;
     case "addExpense": expenseForm(null, a.dataset.cat); break;
     case "editExpense": closeSheet(); setTimeout(()=>expenseForm(id),180); break;
-    case "delExpense": if(confirm("Delete this bill?")){ b.expenses = b.expenses.filter(x=>x.id!==id);
-        Object.keys(b.pins||{}).forEach(k=>{ if(k.startsWith(id+"@")) delete b.pins[k]; });
-        save(); closeSheet(); render(); toast("Deleted — plan rebalanced"); } break;
+    case "delExpense": { const e2 = b.expenses.find(x=>x.id===id); if(!e2) break;
+        askConfirm("Delete "+e2.name+"?",
+          "It comes off every paycheck it was placed on, and the plan re-levels straight away.",
+          "Delete this bill", ()=>{
+            b.expenses = b.expenses.filter(x=>x.id!==id);
+            Object.keys(b.pins||{}).forEach(k=>{ if(k.startsWith(id+"@")) delete b.pins[k]; });
+            save(); render(); toast("Deleted — plan rebalanced");
+          });
+      } break;
     case "addBucket": bucketForm(null); break;
     case "editBucket": closeSheet(); setTimeout(()=>bucketForm(id), 180); break;
-    case "delBucket": if(confirm("Delete this spending category?")){
-        b.buckets = (b.buckets||[]).filter(x=>x.id!==id); save(); closeSheet(); render(); } break;
+    case "delBucket": { const k2 = (b.buckets||[]).find(x=>x.id===id); if(!k2) break;
+        askConfirm("Delete "+k2.name+"?",
+          "That "+money(k2.amount)+" a check stops being held back, so it'll show up as spare money instead.",
+          "Delete it", ()=>{
+            b.buckets = (b.buckets||[]).filter(x=>x.id!==id); save(); render(); toast("Deleted");
+          });
+      } break;
     case "addExtra": extraForm(null); break;
     case "editExtra": extraForm(id); break;
     case "delExtra": b.extras = b.extras.filter(x=>x.id!==id); save(); closeSheet(); render(); break;
-    case "addGoal": goalForm(null, a.dataset.type); break;
+    case "addGoal": goalForm(null, a.dataset.type, false); break;
+    case "addFlexGoal": goalForm(null, "savings", true); break;
+    case "goalUp": case "goalDown": {
+        const list = b.goals||[];
+        const i = list.findIndex(x=>x.id===id);
+        const flexIdx = list.map((g,k)=>g.flex?k:-1).filter(k=>k>=0);
+        const pos = flexIdx.indexOf(i);
+        const j = a.dataset.act==="goalUp" ? flexIdx[pos-1] : flexIdx[pos+1];
+        if(j==null || j<0) break;
+        const t = list[i]; list[i] = list[j]; list[j] = t;
+        save(); render();
+      } break;
+    case "autoGoals": {
+        // the standard sequence: a small cushion, then the debt, then a real cushion
+        const p2 = buildPlan(b), an = analyze(b, p2);
+        const essentials = Math.max(1, an.billsM + an.allowM);
+        const owed = debtOwed(b);
+        b.goals = b.goals || [];
+        const add2 = (name, type, target) => b.goals.push({
+          id:uid(), type, flex:true, name, target: target||0, months:0, saved:0, apr:0,
+          start: iso(today()) });
+        add2("Starter cushion", "savings", Math.round(Math.min(1000, essentials)));
+        if(owed > 0) add2("Attack my debt", "debt", 0);
+        add2("Emergency fund", "savings", Math.round(essentials*3));
+        add2("Long-term savings", "savings", 0);
+        save(); render();
+        toast("Set up — each check now feeds these in order");
+      } break;
     case "editGoal": goalForm(id); break;
-    case "delGoal": if(confirm("Delete this goal?")){ b.goals = b.goals.filter(x=>x.id!==id); save(); closeSheet(); render(); } break;
+    case "delGoal": { const g2 = (b.goals||[]).find(x=>x.id===id); if(!g2) break;
+        askConfirm("Delete "+g2.name+"?",
+          g2.flex ? "Whatever this was picking up each check goes to the next goal down the list, or stays unassigned if there isn't one."
+                  : "The "+money(goalPerCheck(b,g2))+" a check it was taking goes back to the rest of your budget.",
+          "Delete this goal", ()=>{
+            b.goals = (b.goals||[]).filter(x=>x.id!==id); save(); render(); toast("Deleted");
+          });
+      } break;
     case "closeSheet": closeSheet(); break;
+    case "setAllow":  b.allowance    = +a.dataset.val||0; save(); render(); break;
+    case "setKeep":   b.keepPerCheck = +a.dataset.val||0; save(); render(); break;
+    case "setExtra":  b.debtExtra    = +a.dataset.val||0; save(); render(); break;
     case "toggleRollover": b.rollover = !b.rollover; save(); render(); break;
-    case "clearPastDue": { b.paid = b.paid||{};
-        PLAN.unfunded.forEach(o=>{ b.paid[o.key] = true; });
+    case "clearPastDue": {
+        // route through setPaid so a card marked already-paid also drops its balance
+        PLAN.unfunded.forEach(o=>{ if(!paidRec(b, o.key)) setPaid(b, o, true); });
         save(); render(); toast("Cleared — the plan starts from your next check"); } break;
     case "evenOut": {
         const r = evenOut(b);
@@ -2296,7 +2670,6 @@ document.addEventListener("click", ev=>{
     case "togglePaid": togglePaidByKey(a.dataset.key, true); break;
     case "checkin": { const p = pendingCheckin(b); if(p) openCheckin(p.id); } break;
     case "unpin": { const k = a.dataset.key; if(b.pins) delete b.pins[k]; save(); closeSheet(); render(); toast("Back on automatic"); } break;
-    case "resetExtra": delete b.debtExtra; save(); render(); break;
     case "pickBudget": store.activeId = id; save(); closeSheet(); render(); break;
     case "newBudget": { const nb = newBudget("Budget "+(store.budgets.length+1));
         store.budgets.push(nb); store.activeId = nb.id; save(); closeSheet(); render(); TAB="money"; render(); } break;
@@ -2307,12 +2680,16 @@ document.addEventListener("click", ev=>{
         const t2 = id ? store.budgets.find(x=>x.id===id) : b;
         if(!t2) break;
         const last = store.budgets.length === 1;
-        if(!confirm("Delete \""+t2.name+"\" for good?"+(last?" This is your only budget, so the app will start over from setup.":" This can't be undone."))) break;
-        store.budgets = store.budgets.filter(x=>x.id!==t2.id);
-        if(store.activeId === t2.id) store.activeId = store.budgets.length ? store.budgets[0].id : null;
-        save(); closeSheet();
-        if(!store.budgets.length){ $("obRoot").innerHTML = ""; startOnboarding(); }
-        else { render(); toast("Deleted"); }
+        askConfirm("Delete \""+t2.name+"\"?",
+          last ? "This is your only budget, so the app will start over from setup. Everything in it goes for good."
+               : "Its bills, goals and history go for good. This can't be undone.",
+          "Delete this budget", ()=>{
+            store.budgets = store.budgets.filter(x=>x.id!==t2.id);
+            if(store.activeId === t2.id) store.activeId = store.budgets.length ? store.budgets[0].id : null;
+            save();
+            if(!store.budgets.length){ $("obRoot").innerHTML = ""; startOnboarding(); }
+            else { render(); toast("Deleted"); }
+          });
       } break;
     case "shareBudget": shareSheet(); break;
     case "shareAdd": applyShare("add"); break;
@@ -2325,13 +2702,14 @@ document.addEventListener("click", ev=>{
 document.addEventListener("change", ev=>{
   const b = B();
   if(ev.target.id==="horizonSel"){ b.horizon = +ev.target.value; save(); render(); }
-  if(ev.target.id==="allowRange"){ b.allowance = +ev.target.value; save(); render(); }
-  if(ev.target.id==="extraRange"){ b.debtExtra = +ev.target.value; save(); render(); }
+  if(ev.target.id==="allowInput"){ b.allowance = Math.max(0, +ev.target.value||0); save(); render(); }
+  if(ev.target.id==="extraInput"){ b.debtExtra = Math.max(0, +ev.target.value||0); save(); render(); }
+  if(ev.target.id==="keepInput"){ b.keepPerCheck = Math.max(0, +ev.target.value||0); save(); render(); }
   if(ev.target.id==="importFile"){ importData(ev.target.files[0]); }
 });
 document.addEventListener("input", ev=>{
-  if(ev.target.id==="allowRange") $("allowVal").textContent = money(+ev.target.value);
-  if(ev.target.id==="extraRange") $("extraVal").textContent = money(+ev.target.value);
+  if(ev.target.id==="allowInput" && $("allowVal")) $("allowVal").textContent = money(+ev.target.value||0);
+  if(ev.target.id==="keepInput" && $("keepVal")) $("keepVal").textContent = money(+ev.target.value||0);
 });
 $("sheetClose").addEventListener("click", closeSheet);
 $("scrim").addEventListener("click", closeSheet);
